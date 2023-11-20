@@ -67,7 +67,7 @@ class CustomTFSequenceClassifierOutput(TFSequenceClassifierOutput):
         self.log_variance = log_variance
 
 
-class MCDropoutStudent(MCDropoutTFBertForSequenceClassification):
+class MCDropoutBERTDoubleHead(MCDropoutTFBertForSequenceClassification):
 
     def __init__(self, config, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
@@ -117,38 +117,68 @@ class MCDropoutStudent(MCDropoutTFBertForSequenceClassification):
         )
 
 
+def create_bert_config(hidden_dropout_prob, attention_probs_dropout_prob, classifier_dropout):
+    config = BertConfig()
+    config.hidden_dropout_prob = hidden_dropout_prob
+    config.attention_probs_dropout_prob = attention_probs_dropout_prob
+    config.classifier_dropout = classifier_dropout
+    return config
+
 
 #####################
 # Example usage
 
-# Load pre-trained model
-config = BertConfig.from_pretrained('bert-base-uncased')
 
-config.hidden_dropout_prob = 0.2
-config.attention_probs_dropout_prob = 0.2
-config.classifier_dropout = 0.2
+from src.utils.loss_functions import aleatoric_loss, shen_loss
 
-bert_teacher = TFBertForSequenceClassification.from_pretrained('bert-base-uncased', config=config)
+tokenized_training_data = ...
+tokenized_val_data = ...
+
+optimizer = ...
+metrics = ...
+
+# grid-search over layer-wise dropout probabilities
+hidden_dropout_probs = [0.1, 0.2, 0.3]
+attention_dropout_probs = [0.1, 0.2, 0.3]
+classifier_dropout_probs = [0.1, 0.2, 0.3]
+
+batch_size = ...
+epochs = ...
+
+for hidden_dropout in hidden_dropout_probs:
+    for attention_dropout in attention_dropout_probs:
+        for classifier_dropout in classifier_dropout_probs:
+            config = create_bert_config(hidden_dropout, attention_dropout, classifier_dropout)
+            # Initialize and train your model with this config
+            model = MCDropoutBERTDoubleHead.from_pretrained('bert-base-uncased', config=config)
+            model.compile(optimizer=optimizer, loss=aleatoric_loss, metrics=metrics)
+            model.fit(tokenized_training_data, epochs=epochs, validation_data=tokenized_val_data, batch_size=batch_size)
+            # Evaluate the model and record the performance metrics
+            # in terms of classification loss
+            # eval on val set, record metrics, save model checkpoint´ and config
+            model(tokenized_val_data, training=False)
+            # ...
+
+# load the best model checkpoint and config
+config = ...
+# this is the teacher model
+bert_teacher = ...
+
+# train on training + validation data
+
+# evaluate on test set
 
 
-# Add MC Dropout
-# Assuming dropout layers are added in the BERT model, ensure they're active during inference
-# This might involve customizing the model class to override the call method
-def add_mc_dropout(model, last_layer_only=True):
-    # Function to modify the BERT model to include MC dropout
-    # Differentiate between last layer only and all layers
-    # ...
-    # How to tune layer-wise dropout probabilities?
-    # via config!
-    # ...
-    return model
-
-
-# Clone the teacher model architecture
-bert_student = MCDropoutStudent.from_pretrained('bert-base-uncased', config=config)
-# initialize with teacher weights from saved checkpoint
+# initialize the student model
+bert_student = MCDropoutBERTDoubleHead.from_pretrained('bert-base-uncased', config=config)
 bert_student.set_weights(bert_teacher.get_weights())
 
-# train on mean, log_variance pairs
+
+# obtain samples from the teacher model for the training data (with training=True) and SAVE THEM
 # ...
 
+# train student on mean, log_variance pairs using the samples from the teacher model and shen loss
+# ...
+
+# obtain student predictions on test set (MC dropout) using training=False (which keeps dropout active for last layer)
+# ...
