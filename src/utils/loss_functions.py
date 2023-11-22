@@ -40,12 +40,16 @@ def gaussian_mle_loss(y_true, y_pred_mean, y_pred_log_variance):
 def shen_loss(y_true, y_pred, weight=1):
     """Transfer learning loss function from Shen et al. (2021) for fine-tuning the student model.
     Weight corresponds to Lambda in the paper.
+
+    y_true = Tuple(actual ground truth, teacher predictive sample)
     """
-    assert y_pred.shape[1] == 2
+    assert y_true.shape[1] == 2 and y_pred.shape[1] == 2
+
+    y_true, y_teacher_pred = y_true[:, 0], y_true[:, 1]
     # unpack the predictions, this assumes that the predictions are a vector of size 2
-    y_pred_mean, y_pred_log_variance = y_pred[:, 0], y_pred[:, 1]
-    Lt = aleatoric_loss(y_true, y_pred_mean)
-    Ls = gaussian_mle_loss(y_true, y_pred_mean, y_pred_log_variance)
+    y_student_pred_mean, y_student_pred_log_variance = y_pred[:, 0], y_pred[:, 1]
+    Lt = aleatoric_loss(y_true, y_student_pred_mean)
+    Ls = gaussian_mle_loss(y_teacher_pred, y_student_pred_mean, y_student_pred_log_variance)
     Ltotal = Ls + weight * Lt
 
     return Ltotal

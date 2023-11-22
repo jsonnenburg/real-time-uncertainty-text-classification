@@ -175,10 +175,96 @@ bert_student.set_weights(bert_teacher.get_weights())
 
 
 # obtain samples from the teacher model for the training data (with training=True) and SAVE THEM
-# ...
+# for each training sequence, generate m predictive samples (tuples of logits, log variance) using MC dropout from teacher
+# over m samples, compute average observation noise for each sequence
+# obtain final predictive samples for each sequence by sampling from a Gaussian with mean = logit and variance = average observation noise * std normal (afaik)
+# ^do this k times for each of the m predictive samples to obtain m * k predictive samples for each training sequence
+# hence, the training data is now m * k times larger than before --> training process is O(m * k) times slower
+def generate_student_training_samples(teacher, training_data, m=5, k=10):
+    """
+
+    :param teacher:
+    :param training_data:
+    :param m:
+    :param k:
+    :return: student training data, i.e. tuples of (ground truth label, predictive sample)
+    """
+    student_training_samples = []
+    for sequence, ground_truth_label in training_data:
+        predictive_samples = []
+        for _ in range(m):
+            predictive_samples.append(teacher(sequence, training=True))  # teacher outputs logit, log variance!
+            # compute average observation noise
+            avg_observation_noise = ...
+            for _ in range(k):
+                # sample from Gaussian with mean = logit and variance = average observation noise * std normal
+                mean = ...
+                log_variance = ...
+                eps = tf.random.normal(shape=[k])
+                predictive_sample = mean + tf.sqrt(tf.exp(log_variance)) * eps
+                sample = ground_truth_label, predictive_sample
+                student_training_samples.append(sample)
+    return student_training_samples
+
 
 # train student on mean, log_variance pairs using the samples from the teacher model and shen loss
 # ...
 
 # obtain student predictions on test set (MC dropout) using training=False (which keeps dropout active for last layer)
-# ...
+# - want to cache rest of the model (i.e. the BERT part) and only recompute the last layer
+
+# to implement "cache", split student model into two parts: BERT part and last layer
+class StudentBody(tf.keras.Model):
+    def __init__(self, bert_base):
+        super().__init__()
+        self.bert_base = bert_base  # BERT student's base layers
+
+    def call(self, inputs):
+        # Extract the last hidden states
+        outputs = self.bert_base(inputs)[0]  # The shape of outputs is (batch_size, sequence_length, hidden_size)
+
+        # Maybe you want to use the pooled output (representing [CLS] token)
+        pooled_output = outputs[:, 0, :]  # shape: (batch_size, hidden_size)
+
+        return pooled_output
+
+
+student_body = StudentBody(bert_student.bert)  # might have to initialize this with the weights of the student model instead
+
+
+class StudentHead(tf.keras.Model):
+
+    def __init__(self, classifier_head, log_variance_head, dropout_rate=0.1):
+        super().__init__()
+
+        self.dropout = tf.keras.layers.Dropout(dropout_rate)
+
+        self.classifier_head = classifier_head
+        self.log_variance_predictor = log_variance_head
+
+    def call(self, inputs, training=True):
+        # Apply dropout for MC Dropout during both training and inference
+        dropout_output = self.dropout(inputs, training=training)  # Force dropout
+
+        # Apply classification heads
+        logits = self.classifier_head(dropout_output)
+        log_variance = self.classifier2(dropout_output)
+
+        return logits, log_variance
+
+
+student_head = StudentHead(bert_student.classifier, bert_student.log_variance_predictor)
+
+# can then generate output of BERT part for test set and cache it
+
+data_test_preprocessed = ...
+
+student_body_outputs = student_body(data_test_preprocessed, training=False)
+
+# feed cached BERT outputs into last layer and obtain MC dropout samples
+n = 20
+test_set_student_predictions = [student_head(student_body_outputs, training=True) for _ in range(n)]
+
+# TODO: this approach means that we can get rid of MCDropoutTFBertForSequenceClassification and instead use the \
+#  standard BERT model from which MCDropoutBERTDoubleHead inherits
+
