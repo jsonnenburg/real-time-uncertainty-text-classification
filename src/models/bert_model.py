@@ -128,13 +128,14 @@ def create_bert_config(hidden_dropout_prob, attention_probs_dropout_prob, classi
 #####################
 # Example usage
 
-
 from src.utils.loss_functions import aleatoric_loss, shen_loss
 
 tokenized_training_data = ...
 tokenized_val_data = ...
 
+# the optimizer to be used for training
 optimizer = ...
+# the metrics to be recorded during training
 metrics = ...
 
 # grid-search over layer-wise dropout probabilities
@@ -155,7 +156,7 @@ for hidden_dropout in hidden_dropout_probs:
             model.fit(tokenized_training_data, epochs=epochs, validation_data=tokenized_val_data, batch_size=batch_size)
             # Evaluate the model and record the performance metrics
             # in terms of classification loss
-            # eval on val set, record metrics, save model checkpoint´ and config
+            # eval on val set, record metrics, save model checkpoint and config
             model(tokenized_val_data, training=False)
             # ...
 
@@ -168,6 +169,11 @@ bert_teacher = ...
 
 # evaluate on test set
 
+
+# save the teacher model
+bert_teacher.save_weights('path/to/save/model_weights.h5')
+# save the optimizer state
+optimizer.save_weights('path/to/save/optimizer_weights.h5')
 
 # initialize the student model
 bert_student = MCDropoutBERTDoubleHead.from_pretrained('bert-base-uncased', config=config)
@@ -229,9 +235,6 @@ class StudentBody(tf.keras.Model):
         return pooled_output
 
 
-student_body = StudentBody(bert_student.bert)  # might have to initialize this with the weights of the student model instead
-
-
 class StudentHead(tf.keras.Model):
 
     def __init__(self, classifier_head, log_variance_head, dropout_rate=0.1):
@@ -253,17 +256,29 @@ class StudentHead(tf.keras.Model):
         return logits, log_variance
 
 
-student_head = StudentHead(bert_student.classifier, bert_student.log_variance_predictor)
+class MCDropoutBERTStudent:
+    """Student model, only used for inference.
 
-# can then generate output of BERT part for test set and cache it
+    The student model consists of a BERT base model and a last layer with MC Dropout enabled.
+    """
+    def __init__(self, student, dropout_rate):
+        self.student = student
+
+        self.student_body = StudentBody(self.student.bert)
+        self.student_head = StudentHead(self.student.classifier, self.student.log_variance_predictor, dropout_rate)
+
+    def predict(self, inputs, n=20):
+        student_body_outputs = self.student_body(inputs, training=False)
+        # feed cached BERT outputs into last layer and obtain MC dropout samples
+        student_predictions = [self.student_head(student_body_outputs, training=True) for _ in range(n)]
+        return student_predictions
+
 
 data_test_preprocessed = ...
 
-student_body_outputs = student_body(data_test_preprocessed, training=False)
+mc_dropout_student = MCDropoutBERTStudent(bert_student, dropout_rate=0.1)
+mc_dropout_student.predict(data_test_preprocessed, n=20)
 
-# feed cached BERT outputs into last layer and obtain MC dropout samples
-n = 20
-test_set_student_predictions = [student_head(student_body_outputs, training=True) for _ in range(n)]
 
 # TODO: this approach means that we can get rid of MCDropoutTFBertForSequenceClassification and instead use the \
 #  standard BERT model from which MCDropoutBERTDoubleHead inherits
