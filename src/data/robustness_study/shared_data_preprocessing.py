@@ -81,7 +81,8 @@ class GeneralTextPreprocessor:
 
     @staticmethod
     def replace_urls(text: str) -> str:
-        """Adapted from Davidson et al. (2017).
+        """
+        Adapted from Davidson et al. (2017).
         """
         url_regex = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%\d{2}[a-fA-F]))+'
         return re.sub(url_regex, 'URLHERE', text)

@@ -43,6 +43,11 @@ def test_clean_html_content(preprocessor: GeneralTextPreprocessor):
     assert preprocessor.clean_html_content(text) == "this is a test 🍻🍻😜 "
 
 
+def test_remove_quotes(preprocessor: GeneralTextPreprocessor):
+    text = "this is a \"test\""
+    assert preprocessor.remove_quotes(text) == "this is a test"
+
+
 def test_preprocess(preprocessor: GeneralTextPreprocessor):
     text = "this is a @test \n #test 😂 &#127867;"
     assert preprocessor.preprocess(text) == "mentionhere hashtaghere face_with_tears_of_joy clinking_beer_mugs"
