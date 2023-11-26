@@ -24,7 +24,7 @@ class DataLoader:
         self.data.drop(['hate_speech', 'offensive_language', 'neither', 'class', 'count'], axis=1, inplace=True)
         self.data.columns = ['text', 'target']
 
-    def split(self, train_size: float, val_size: float, test_size: float) -> Tuple[pd.DataFrame,pd.DataFrame, pd.DataFrame]:
+    def split(self, train_size: float, val_size: float, test_size: float) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         assert train_size + val_size + test_size == 1
         self.data = self.data.sample(frac=1, random_state=SEED).reset_index(drop=True)
         train_end = int(train_size * len(self.data))
@@ -53,14 +53,14 @@ class GeneralTextPreprocessor:
 
     @staticmethod
     def remove_multiple_spaces(text: str) -> str:
-        return re.sub("\s\s+" , " ", text)
+        return re.sub("\s\s+", " ", text)
 
     @staticmethod
-    def replace_emoji(text)-> str:
+    def replace_emoji(text) -> str:
         return emoji.demojize(text, delimiters=("", ""))
 
     @staticmethod
-    def remove_newlines(text)-> str:
+    def remove_newlines(text) -> str:
         """Replace occurrences of \r, \n, or \r\n (in any combination) with a single space.
         """
         cleaned_text = re.sub(r'[\r\n]+', ' ', text)

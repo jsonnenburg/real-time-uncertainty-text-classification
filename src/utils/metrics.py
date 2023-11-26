@@ -36,6 +36,7 @@ def pred_entropy_score(y_prob):
 
 
 def ece_score(y_true, y_prob, n_bins=10):
+    # TODO: write unit test
     y_pred = np.argmax(y_prob, axis=1)
     bin_limits = np.linspace(0, 1, n_bins + 1)
     bin_lowers = bin_limits[:-1]
