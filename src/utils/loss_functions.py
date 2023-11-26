@@ -29,11 +29,10 @@ def gaussian_mle_loss(y_true, y_pred_mean, y_pred_log_variance):
     """
     mu_i, log_variance_i = y_pred_mean, y_pred_log_variance
 
-    # compute the exponential of the log variance to get the variance
-    variance_i = tf.exp(log_variance_i)
-
     # calculate the Gaussian MLE loss
-    loss = 0.5 * tf.reduce_mean(variance_i + tf.square(y_true - mu_i) / variance_i - log_variance_i)
+    # loss = 0.5 * tf.reduce_mean(variance_i + tf.square(y_true - mu_i) / variance_i - log_variance_i)
+    loss = tf.reduce_mean(0.5 * tf.exp(-log_variance_i) * tf.square(y_true - mu_i) + 0.5 * log_variance_i)
+    # TODO: check if this corresponds to Eq. 10 in Shen et al. (2021)
     return loss
 
 
@@ -45,11 +44,18 @@ def shen_loss(y_true, y_pred, weight=1):
     """
     assert y_true.shape[1] == 2 and y_pred.shape[1] == 2
 
-    y_true, y_teacher_pred = y_true[:, 0], y_true[:, 1]
+    y_true, y_teacher_pred_mean = y_true[:, 0], y_true[:, 1]
     # unpack the predictions, this assumes that the predictions are a vector of size 2
     y_student_pred_mean, y_student_pred_log_variance = y_pred[:, 0], y_pred[:, 1]
     Lt = aleatoric_loss(y_true, y_student_pred_mean)
-    Ls = gaussian_mle_loss(y_teacher_pred, y_student_pred_mean, y_student_pred_log_variance)
+    Ls = gaussian_mle_loss(y_teacher_pred_mean, y_student_pred_mean, y_student_pred_log_variance)
     Ltotal = Ls + weight * Lt
 
-    return Ltotal
+    return tf.reduce_mean(Ltotal)
+
+# shen loss function - implementation for classification in pytorch
+# def shen_loss(y_true, y_pred):
+#    Ls = K.mean(0.5*K.exp(-y_pred[:,1]) * K.pow(y_true[:,0] - y_pred[:,0],2) + 0.5*y_pred[:,1])
+#    Lt = K.abs(y_true[:,0] - y_pred[:,0])
+#    L = Ls + Lt
+#    return K.mean(L)
