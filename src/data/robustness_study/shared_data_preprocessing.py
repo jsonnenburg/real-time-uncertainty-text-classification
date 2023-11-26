@@ -60,11 +60,14 @@ class GeneralTextPreprocessor:
         return emoji.demojize(text, delimiters=("", ""))
 
     @staticmethod
+    def remove_quotes(text) -> str:
+        return re.sub(r"[\"“”']", '', text)
+
+    @staticmethod
     def remove_newlines(text) -> str:
         """Replace occurrences of \r, \n, or \r\n (in any combination) with a single space.
         """
-        cleaned_text = re.sub(r'[\r\n]+', ' ', text)
-        return cleaned_text
+        return re.sub(r'[\r\n]+', ' ', text)
 
     @staticmethod
     def replace_hashtags(text: str) -> str:
@@ -86,8 +89,7 @@ class GeneralTextPreprocessor:
     @staticmethod
     def clean_html_content(text: str) -> str:
         decoded_text = html.unescape(text)
-        clean_text = BeautifulSoup(decoded_text, "html.parser").get_text()
-        return clean_text
+        return BeautifulSoup(decoded_text, "html.parser").get_text()
 
     def preprocess(self, text: str) -> str:
         text = self.remove_stopwords(text)
@@ -98,5 +100,6 @@ class GeneralTextPreprocessor:
         text = self.replace_urls(text)
         text = self.clean_html_content(text)
         text = self.replace_emoji(text)
+        text = self.remove_quotes(text)
         text = text.lower()
         return text

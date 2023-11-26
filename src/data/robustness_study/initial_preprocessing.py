@@ -22,9 +22,9 @@ df_val['text'] = df_val['text'].apply(preprocessor.preprocess)
 df_test['text'] = df_test['text'].apply(preprocessor.preprocess)
 
 # save preprocessed data
-df_train.to_csv(os.path.join(OUTPUT_PATH, "train.csv"))
-df_val.to_csv(os.path.join(OUTPUT_PATH, "val.csv"))
-df_test.to_csv(os.path.join(OUTPUT_PATH, "test.csv"))
+df_train.to_csv(os.path.join(OUTPUT_PATH, "train.csv"), sep='\t')
+df_val.to_csv(os.path.join(OUTPUT_PATH, "val.csv"), sep='\t')
+df_test.to_csv(os.path.join(OUTPUT_PATH, "test.csv"), sep='\t')
 
 
 def main():
