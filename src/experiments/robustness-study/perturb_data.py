@@ -53,24 +53,22 @@ elif p_rd > 0:
     assert p_sr == 0 and p_ri == 0 and p_rs == 0
 
 
-def generate_noisy_test_data(input_data, output_file, p_sr, p_ri, p_rs, p_rd):
+def generate_noisy_test_data(input_data, output_dir, p_sr, p_ri, p_rs, p_rd):
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    format_params = f"_psr{int(p_sr*1000):03d}_pri{int(p_ri*1000):03d}_prs{int(p_rs*1000):03d}_prd{int(p_rd*1000):03d}"
+
+    output_file_name = os.path.basename(input_data).split('.')[0] + format_params + '.csv'
 
     try:
-        os.makedirs(output_dir, exist_ok=True)
-        writer = open(output_file, 'w')
-        lines = input_data['text'].tolist()
-        for i, line in enumerate(lines):
-            parts = line[:-1].split('\t')
-            label = parts[0]
-            sentence = parts[1]
-            aug_sentences = introduce_noise(sentence, p_sr=p_sr, p_ri=p_ri, p_rs=p_rs, p_rd=p_rd)
-            for aug_sentence in aug_sentences:
-                writer.write(label + "\t" + aug_sentence + '\n')
-
-        writer.close()
+        input_data['text'].apply(lambda x: introduce_noise(x, p_sr=p_sr, p_ri=p_ri, p_rs=p_rs, p_rd=p_rd))
     except Exception as e:
         logger.error("Failed to generate noisy sentences: " + str(e))
-    print("Successfully generated noisy sentences for " + input_data + " and saved them to " + output_file + ".")
+
+    input_data.to_csv(os.path.join(output_dir, output_file_name), sep='\t')
+
+    print("Successfully generated noisy sentences for " + input_data + " and saved them to " + output_dir + ".")
 
 
 if __name__ == "__main__":
