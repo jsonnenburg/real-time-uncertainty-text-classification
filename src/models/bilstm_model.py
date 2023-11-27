@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-class BiLSTMModel(tf.keras.Model):
+class BiLSTM(tf.keras.Model):
     """Bidirectional LSTM model for sequence classification.
     TODO: use GloVe embeddings?
     TODO: adapt this to the actual model architecture decided on
@@ -12,10 +12,11 @@ class BiLSTMModel(tf.keras.Model):
     :param dropout_rate: Dropout rate for regularization.
     """
 
-    def __init__(self, embedding_matrix, lstm_units, num_classes, dropout_rate):
+    def __init__(self, embedding_matrix, sequence_length, lstm_units, num_classes, dropout_rate):
         super().__init__()
         self.embedding = tf.keras.layers.Embedding(input_dim=embedding_matrix.shape[0],
                                                    output_dim=embedding_matrix.shape[1],
+                                                   input_length=sequence_length,
                                                    weights=[embedding_matrix],
                                                    trainable=False)
         self.embedding_dropout = tf.keras.layers.Dropout(dropout_rate)
@@ -25,8 +26,8 @@ class BiLSTMModel(tf.keras.Model):
         self.hidden_dropout_2 = tf.keras.layers.Dropout(dropout_rate)
         self.classifier = tf.keras.layers.Dense(num_classes, activation='softmax')
 
-    def call(self, inputs, training=False):
-        x = self.embedding(inputs)
+    def call(self, x, training=False):
+        x = self.embedding(x)
         x = self.embedding_dropout(x, training=training)
         x = self.bilstm_1(x)
         x = self.hidden_dropout_1(x, training=training)
@@ -39,7 +40,7 @@ class BiLSTMModel(tf.keras.Model):
 # one for the mean (classifier) and one for the log variance (regressor)
 # this model can then be initialized with the fine-tuned weights of the standard BiLSTM model
 
-class BiLSTMStudentModel(BiLSTMModel):
+class BiLSTMStudent(BiLSTM):
     """Extension of the BiLSTMModel with an additional output for regression.
 
     This model includes two heads: one for classification (mean prediction) and
