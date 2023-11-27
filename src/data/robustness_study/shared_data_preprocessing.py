@@ -3,7 +3,6 @@ import html
 from typing import Optional, Tuple
 
 from bs4 import BeautifulSoup
-from nltk.corpus import stopwords
 import emoji
 
 import pandas as pd
@@ -35,72 +34,58 @@ class DataLoader:
         return train, val, test
 
 
-stopwords = stopwords.words("english")
+def replace_entities(text):
+    text = re.sub(r'@\w+', 'user ', text)
 
-# following Davidson et al. (2017)
-other_exclusions = ["#ff", "ff", "rt"]
-stopwords.extend(other_exclusions)
+    text = re.sub(r'\d+', 'number ', text)
+
+    text = re.sub(r'#\w+', lambda m: 'hashtag ' + m.group(0)[1:], text)
+
+    text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%\d{2}[a-fA-F]))+', 'url ', text)
+
+    text = re.sub(r'(:\)|:\(|:D|:P)', lambda m: 'emoticon ', text)
+
+    text = emoji.replace_emoji(text, replace='emoji ')
+
+    return text
 
 
-class GeneralTextPreprocessor:
+def replace_elongated_words(text):
+    """
+     Replacing three or more consecutive identical characters with one.
+    """
+    return re.sub(r'(.)\1{2,}', r'\1', text)
 
-    def __init__(self):
-        self.stopwords = stopwords
-        self.other_exclusions = other_exclusions
 
-    def remove_stopwords(self, text: str) -> str:
-        return " ".join([word for word in text.split() if word not in self.stopwords])
+def remove_multiple_spaces(text: str) -> str:
+    return re.sub("\s\s+", " ", text)
 
-    @staticmethod
-    def remove_multiple_spaces(text: str) -> str:
-        return re.sub("\s\s+", " ", text)
 
-    @staticmethod
-    def replace_emoji(text) -> str:
-        return emoji.demojize(text, delimiters=("", ""))
+def remove_quotes(text) -> str:
+    return re.sub(r"[\"“”']", '', text)
 
-    @staticmethod
-    def remove_quotes(text) -> str:
-        return re.sub(r"[\"“”']", '', text)
 
-    @staticmethod
-    def remove_newlines(text) -> str:
-        """Replace occurrences of \r, \n, or \r\n (in any combination) with a single space.
-        """
-        return re.sub(r'[\r\n]+', ' ', text)
+def remove_newlines(text) -> str:
+    """Replace occurrences of \r, \n, or \r\n (in any combination) with a single space.
+    """
+    return re.sub(r'[\r\n]+', ' ', text)
 
-    @staticmethod
-    def replace_hashtags(text: str) -> str:
-        """Adapted from https://stackoverflow.com/questions/38506598/regular-expression-to-match-hashtag-but-not-hashtag-with-semicolon
-        """
-        return re.sub(r'\B(\#[a-zA-Z]+\b)(?!;)', 'HASHTAGHERE', text)
 
-    @staticmethod
-    def replace_mentions(text: str) -> str:
-        return re.sub(r'@\w+', 'MENTIONHERE', text)
+def remove_punctuation(text: str) -> str:
+    return re.sub(r'[^\w\s]', '', text)
 
-    @staticmethod
-    def replace_urls(text: str) -> str:
-        """
-        Adapted from Davidson et al. (2017).
-        """
-        url_regex = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%\d{2}[a-fA-F]))+'
-        return re.sub(url_regex, 'URLHERE', text)
 
-    @staticmethod
-    def clean_html_content(text: str) -> str:
-        decoded_text = html.unescape(text)
-        return BeautifulSoup(decoded_text, "html.parser").get_text()
+def clean_html_content(text: str) -> str:
+    return BeautifulSoup(html.unescape(text), "html.parser").get_text()
 
-    def preprocess(self, text: str) -> str:
-        text = self.remove_stopwords(text)
-        text = self.remove_newlines(text)
-        text = self.remove_multiple_spaces(text)
-        text = self.replace_hashtags(text)
-        text = self.replace_mentions(text)
-        text = self.replace_urls(text)
-        text = self.clean_html_content(text)
-        text = self.replace_emoji(text)
-        text = self.remove_quotes(text)
-        text = text.lower()
-        return text
+
+def preprocess(text: str) -> str:
+    text = remove_newlines(text)
+    text = clean_html_content(text)
+    text = remove_quotes(text)
+    text = replace_elongated_words(text)
+    text = replace_entities(text)
+    text = remove_punctuation(text)
+    text = remove_multiple_spaces(text)
+    text = text.lower()
+    return text

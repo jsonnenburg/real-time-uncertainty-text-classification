@@ -1,4 +1,5 @@
-"""Using the preprocessed data, we now convert the data into a format that can be used by the BERT model.
+"""
+Using the preprocessed data, we now convert the data into a format that can be used by the BERT model.
 """
 from typing import Tuple
 
@@ -7,7 +8,7 @@ import numpy as np
 
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
-MAX_LEN = 64  # TODO: adapt this to actual max length of the data
+MAX_LEN = 48  # in accordance with max length of the data sequences
 
 
 def bert_tokenize(all_sequences, max_length=MAX_LEN) -> Tuple[np.ndarray, np.ndarray]:
