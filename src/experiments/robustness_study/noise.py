@@ -1,14 +1,73 @@
 import random
-from random import shuffle
-
+import spacy
 # first time using wordnet:
 import nltk
 nltk.download('wordnet')
 from nltk.corpus import wordnet
+nltk.download('averaged_perceptron_tagger')
 
 
 random.seed(1)
 
+########################################################################
+# POS-guided word replacement (tang2019)
+# With probability p, we replace a word with another of the same POS tag. To preserve the original distribution,
+# the new word is sampled from the unigram word distribution re-normalized by the part-of-speech (POS) tag. This rule
+# perturbs the semantics of each example, e.g., “What do pigs eat?” is different from “How do pigs eat?”
+
+# compute word distribution on test set! since we only perturb this subset
+########################################################################
+nlp = spacy.load("en_core_web_sm")
+
+
+def tokenize_and_pos_tag(sequence):
+    return nltk.pos_tag(nltk.word_tokenize(sequence))
+
+
+def get_words_with_same_pos(tag):
+    """
+    Function to get words with the same POS tag (simplified version)
+
+    TODO: This function should be enhanced with a more comprehensive approach,
+          use a more sophisticated method to get words with the same POS tag,
+          ideally considering word frequency.
+
+          idea: create class, initialize with test set, then use this class to get words with same POS tag for sequences
+    """
+    synsets = wordnet.synsets('.')
+    return list(set([word.name().split('.')[0] for synset in synsets for word in synset.lemmas() if synset.name().split('.')[1] == tag.lower()]))
+
+
+def nltk_to_wordnet_pos(nltk_pos):
+    if nltk_pos.startswith('J'):
+        return wordnet.ADJ
+    elif nltk_pos.startswith('V'):
+        return wordnet.VERB
+    elif nltk_pos.startswith('N'):
+        return wordnet.NOUN
+    elif nltk_pos.startswith('R'):
+        return wordnet.ADV
+    else:
+        return None
+
+
+def pos_guided_word_replacement(sequence, p_pos):
+    tokenized_and_tagged = tokenize_and_pos_tag(sequence)
+    new_sequence = []
+
+    for word, pos in tokenized_and_tagged:
+        # Convert NLTK POS tags to WordNet POS tags if necessary
+        wordnet_pos = nltk_to_wordnet_pos(pos)
+        if random.random() < p_pos and wordnet_pos:
+            same_pos_words = get_words_with_same_pos(wordnet_pos)
+            word = random.choice(same_pos_words) if same_pos_words else word
+
+        new_sequence.append(word)
+
+    return ' '.join(new_sequence)
+
+
+########################################################################
 
 # Adapted from https://github.com/jasonwei20/eda_nlp/ (wei2019)
 
