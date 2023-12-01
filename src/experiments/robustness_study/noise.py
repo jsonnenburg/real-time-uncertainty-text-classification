@@ -231,7 +231,7 @@ def random_insertion(words, p):
 # main data augmentation function
 ########################################################################
 
-def introduce_noise(sequence, p_sr=0, p_ri=0, p_rs=0, p_rd=0):
+def introduce_noise(sequence, word_distribution, p_sr=0, p_pr=0, p_ri=0, p_rs=0, p_rd=0):
     words = sequence.split(' ')
     words = [word for word in words if word is not '']
 
@@ -240,6 +240,9 @@ def introduce_noise(sequence, p_sr=0, p_ri=0, p_rs=0, p_rd=0):
     if p_sr > 0:
         a_words = synonym_replacement(words, p_sr)
         augmented_sequence = ' '.join(a_words)
+
+    if p_pr > 0:
+        augmented_sequence = pos_guided_word_replacement(word_distribution, sequence, p_pr)
 
     if p_ri > 0:
         a_words = random_insertion(words, p_ri)
