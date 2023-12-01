@@ -1,9 +1,8 @@
-import random
-import spacy
-# first time using wordnet:
-import nltk
-nltk.download('wordnet')
 from nltk.corpus import wordnet
+import random
+import nltk
+# first time using wordnet or averaged_perceptron_tagger, download them
+nltk.download('wordnet')
 nltk.download('averaged_perceptron_tagger')
 
 
@@ -17,25 +16,38 @@ random.seed(1)
 
 # compute word distribution on test set! since we only perturb this subset
 ########################################################################
-nlp = spacy.load("en_core_web_sm")
+
+
+class WordDistributionByPOSTag:
+    def __init__(self, test_set):
+        self.test_set = test_set
+        self.word_freq_by_pos = self.get_word_freq_by_pos(self.test_set)
+
+    @staticmethod
+    def get_word_freq_by_pos(data):
+        word_freq_by_pos = {}
+        for sentence in data:
+            tokenized_and_tagged = nltk.pos_tag(nltk.word_tokenize(sentence))
+            for word, pos in tokenized_and_tagged:
+                if pos not in word_freq_by_pos:
+                    word_freq_by_pos[pos] = {}
+                if word in word_freq_by_pos[pos]:
+                    word_freq_by_pos[pos][word] += 1
+                else:
+                    word_freq_by_pos[pos][word] = 1
+        return word_freq_by_pos
+
+    def get_words_with_same_pos(self, pos_tag):
+        if pos_tag not in self.word_freq_by_pos:
+            return []
+        words_with_freq = self.word_freq_by_pos[pos_tag]
+        words, frequencies = list(words_with_freq.keys()), list(words_with_freq.values())
+        chosen_word = random.choices(words, weights=frequencies, k=1)[0]
+        return chosen_word
 
 
 def tokenize_and_pos_tag(sequence):
     return nltk.pos_tag(nltk.word_tokenize(sequence))
-
-
-def get_words_with_same_pos(tag):
-    """
-    Function to get words with the same POS tag (simplified version)
-
-    TODO: This function should be enhanced with a more comprehensive approach,
-          use a more sophisticated method to get words with the same POS tag,
-          ideally considering word frequency.
-
-          idea: create class, initialize with test set, then use this class to get words with same POS tag for sequences
-    """
-    synsets = wordnet.synsets('.')
-    return list(set([word.name().split('.')[0] for synset in synsets for word in synset.lemmas() if synset.name().split('.')[1] == tag.lower()]))
 
 
 def nltk_to_wordnet_pos(nltk_pos):
@@ -51,19 +63,15 @@ def nltk_to_wordnet_pos(nltk_pos):
         return None
 
 
-def pos_guided_word_replacement(sequence, p_pos):
+def pos_guided_word_replacement(word_distribution, sequence, p_pos):
     tokenized_and_tagged = tokenize_and_pos_tag(sequence)
     new_sequence = []
-
     for word, pos in tokenized_and_tagged:
-        # Convert NLTK POS tags to WordNet POS tags if necessary
         wordnet_pos = nltk_to_wordnet_pos(pos)
         if random.random() < p_pos and wordnet_pos:
-            same_pos_words = get_words_with_same_pos(wordnet_pos)
+            same_pos_words = word_distribution.get_words_with_same_pos(wordnet_pos)
             word = random.choice(same_pos_words) if same_pos_words else word
-
         new_sequence.append(word)
-
     return ' '.join(new_sequence)
 
 
