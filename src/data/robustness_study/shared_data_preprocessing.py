@@ -28,9 +28,9 @@ class DataLoader:
         self.data = self.data.sample(frac=1, random_state=SEED).reset_index(drop=True)
         train_end = int(train_size * len(self.data))
         val_end = int((train_size + val_size) * len(self.data))
-        train = self.data.iloc[:train_end]
-        val = self.data.iloc[train_end:val_end]
-        test = self.data.iloc[val_end:]
+        train = self.data.iloc[:train_end].reset_index(drop=True)
+        val = self.data.iloc[train_end:val_end].reset_index(drop=True)
+        test = self.data.iloc[val_end:].reset_index(drop=True)
         return train, val, test
 
 

@@ -233,7 +233,7 @@ def random_insertion(words, p):
 
 def introduce_noise(sequence, word_distribution, p_sr=0, p_pr=0, p_ri=0, p_rs=0, p_rd=0):
     words = sequence.split(' ')
-    words = [word for word in words if word is not '']
+    words = [word for word in words if word != '']
 
     augmented_sequence = None
 
