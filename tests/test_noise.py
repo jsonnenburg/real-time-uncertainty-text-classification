@@ -1,8 +1,18 @@
+import pandas as pd
 import pytest
 
 from src.experiments.robustness_study.noise import *
 
 random.seed(42)
+
+data_test = pd.read_csv("/Users/johann/Documents/Uni/real-time-uncertainty-text-classification/data/robustness-study/preprocessed/test.csv", sep="\t", index_col=0)
+
+
+def test_pos_guided_word_replacement():
+    word_distribution = WordDistributionByPOSTag(data_test['text'])
+    sequence = "this is a totally normal test sentence"
+    p_pos = 1
+    assert pos_guided_word_replacement(word_distribution, sequence, p_pos) == "this call a only new i soccer"
 
 
 def test_random_insertion():

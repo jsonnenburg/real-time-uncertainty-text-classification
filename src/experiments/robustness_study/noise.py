@@ -2,8 +2,8 @@ from nltk.corpus import wordnet
 import random
 import nltk
 # first time using wordnet or averaged_perceptron_tagger, download them
-nltk.download('wordnet')
-nltk.download('averaged_perceptron_tagger')
+# nltk.download('wordnet')
+# nltk.download('averaged_perceptron_tagger')
 
 
 random.seed(1)
@@ -24,23 +24,37 @@ class WordDistributionByPOSTag:
         self.word_freq_by_pos = self.get_word_freq_by_pos(self.test_set)
 
     @staticmethod
-    def get_word_freq_by_pos(data):
+    def nltk_to_wordnet_pos(nltk_pos):
+        if nltk_pos.startswith('J'):
+            return wordnet.ADJ
+        elif nltk_pos.startswith('V'):
+            return wordnet.VERB
+        elif nltk_pos.startswith('N'):
+            return wordnet.NOUN
+        elif nltk_pos.startswith('R'):
+            return wordnet.ADV
+        else:
+            return None
+
+    def get_word_freq_by_pos(self, data):
         word_freq_by_pos = {}
         for sentence in data:
             tokenized_and_tagged = nltk.pos_tag(nltk.word_tokenize(sentence))
             for word, pos in tokenized_and_tagged:
-                if pos not in word_freq_by_pos:
-                    word_freq_by_pos[pos] = {}
-                if word in word_freq_by_pos[pos]:
-                    word_freq_by_pos[pos][word] += 1
-                else:
-                    word_freq_by_pos[pos][word] = 1
+                wordnet_pos = self.nltk_to_wordnet_pos(pos)
+                if wordnet_pos:
+                    if wordnet_pos not in word_freq_by_pos:
+                        word_freq_by_pos[wordnet_pos] = {}
+                    if word in word_freq_by_pos[wordnet_pos]:
+                        word_freq_by_pos[wordnet_pos][word] += 1
+                    else:
+                        word_freq_by_pos[wordnet_pos][word] = 1
         return word_freq_by_pos
 
-    def get_words_with_same_pos(self, pos_tag):
-        if pos_tag not in self.word_freq_by_pos:
+    def get_words_with_same_pos(self, wordnet_pos):
+        if wordnet_pos not in self.word_freq_by_pos:
             return []
-        words_with_freq = self.word_freq_by_pos[pos_tag]
+        words_with_freq = self.word_freq_by_pos[wordnet_pos]
         words, frequencies = list(words_with_freq.keys()), list(words_with_freq.values())
         chosen_word = random.choices(words, weights=frequencies, k=1)[0]
         return chosen_word
@@ -50,27 +64,14 @@ def tokenize_and_pos_tag(sequence):
     return nltk.pos_tag(nltk.word_tokenize(sequence))
 
 
-def nltk_to_wordnet_pos(nltk_pos):
-    if nltk_pos.startswith('J'):
-        return wordnet.ADJ
-    elif nltk_pos.startswith('V'):
-        return wordnet.VERB
-    elif nltk_pos.startswith('N'):
-        return wordnet.NOUN
-    elif nltk_pos.startswith('R'):
-        return wordnet.ADV
-    else:
-        return None
-
-
 def pos_guided_word_replacement(word_distribution, sequence, p_pos):
     tokenized_and_tagged = tokenize_and_pos_tag(sequence)
     new_sequence = []
     for word, pos in tokenized_and_tagged:
-        wordnet_pos = nltk_to_wordnet_pos(pos)
+        wordnet_pos = word_distribution.nltk_to_wordnet_pos(pos)
         if random.random() < p_pos and wordnet_pos:
-            same_pos_words = word_distribution.get_words_with_same_pos(wordnet_pos)
-            word = random.choice(same_pos_words) if same_pos_words else word
+            same_pos_word = word_distribution.get_words_with_same_pos(wordnet_pos)
+            word = same_pos_word if same_pos_word else word
         new_sequence.append(word)
     return ' '.join(new_sequence)
 
