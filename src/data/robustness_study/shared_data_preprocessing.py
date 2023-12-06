@@ -51,12 +51,12 @@ class EntityTags(str, Enum):
     < user >, < number >, < hashtag >, < url >, < emoticon >.
     Additionally, we also encode emojis as < emoji >.
     """
-    USER = '<user>',
-    NUMBER = '<number>',
-    HASHTAG = '<hashtag>',
-    URL = '<url>',
-    EMOTICON = '<emoticon>',
-    EMOJI = '<emoji>'
+    USER = '<user> ',
+    NUMBER = '<number> ',
+    HASHTAG = '<hashtag> ',
+    URL = '<url> ',
+    EMOTICON = '<emoticon> ',
+    EMOJI = ' <emoji> '
 
 
 # precompile all regular expressions
@@ -97,9 +97,9 @@ def split_hashtag(hashtag,):
 
 def replace_entities(text):
     text = regex_user.sub(EntityTags.USER, text)
+    text = regex_url.sub(EntityTags.URL, text)
     text = regex_number.sub(EntityTags.NUMBER, text)
     text = regex_hashtag.sub(lambda m: EntityTags.HASHTAG + split_hashtag(m.group(0)[1:]), text)
-    text = regex_url.sub(EntityTags.URL, text)
     text = regex_emoticon.sub(lambda m: EntityTags.EMOTICON, text)
     text = emoji.replace_emoji(text, replace=str(EntityTags.EMOJI.value))
 
