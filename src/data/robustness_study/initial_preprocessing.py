@@ -2,6 +2,9 @@ import os
 
 from shared_data_preprocessing import DataLoader, preprocess
 
+from joblib import Parallel, delayed
+
+
 DATA_PATH = "../../../data/robustness-study/raw/labeled_data.csv"
 OUTPUT_PATH = "../../../data/robustness-study/preprocessed/"
 
@@ -9,15 +12,18 @@ OUTPUT_PATH = "../../../data/robustness-study/preprocessed/"
 data_loader = DataLoader(DATA_PATH)
 data_loader.load_data()
 
-# split data
-df_train, df_val, df_test = data_loader.split(0.7, 0.15, 0.15)
+# split data, splits following mozafari2020
+df_train, df_val, df_test = data_loader.split(0.8, 0.1, 0.1)
 
-# general preprocessing
+
 # iterate preprocess over all rows
+def parallel_apply(df, func, n_jobs=-1):
+    return Parallel(n_jobs=n_jobs)(delayed(func)(row) for row in df)
 
-df_train['text'] = df_train['text'].apply(lambda x: preprocess(x))
-df_val['text'] = df_val['text'].apply(lambda x: preprocess(x))
-df_test['text'] = df_test['text'].apply(lambda x: preprocess(x))
+
+df_train['text'] = parallel_apply(df_train['text'], preprocess)
+df_val['text'] = parallel_apply(df_val['text'], preprocess)
+df_test['text'] = parallel_apply(df_test['text'], preprocess)
 
 # save preprocessed data
 df_train.to_csv(os.path.join(OUTPUT_PATH, "train.csv"), sep='\t')

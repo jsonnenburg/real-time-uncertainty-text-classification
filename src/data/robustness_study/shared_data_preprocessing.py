@@ -1,11 +1,16 @@
 import re
 import html
 from typing import Optional, Tuple
+from enum import Enum
+# import nltk
+# nltk.download('words')
+from nltk.corpus import words
 
 from bs4 import BeautifulSoup
 import emoji
 
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
 SEED = 42
 
@@ -23,56 +28,135 @@ class DataLoader:
         self.data.drop(['hate_speech', 'offensive_language', 'neither', 'class', 'count'], axis=1, inplace=True)
         self.data.columns = ['text', 'target']
 
-    def split(self, train_size: float, val_size: float, test_size: float) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def split(self, train_size: float, val_size: float, test_size: float) -> Tuple[
+        pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         assert train_size + val_size + test_size == 1
-        self.data = self.data.sample(frac=1, random_state=SEED).reset_index(drop=True)
-        train_end = int(train_size * len(self.data))
-        val_end = int((train_size + val_size) * len(self.data))
-        train = self.data.iloc[:train_end].reset_index(drop=True)
-        val = self.data.iloc[train_end:val_end].reset_index(drop=True)
-        test = self.data.iloc[val_end:].reset_index(drop=True)
-        return train, val, test
+
+        # first split: train and temp
+        train, temp = train_test_split(self.data, train_size=train_size, stratify=self.data['target'],
+                                       random_state=SEED)
+
+        # adjust val_size proportion to account for the reduced dataset size
+        val_size_adjusted = val_size / (val_size + test_size)
+
+        # second split: val and test
+        val, test = train_test_split(temp, train_size=val_size_adjusted, stratify=temp['target'], random_state=SEED)
+
+        return train.reset_index(drop=True), val.reset_index(drop=True), test.reset_index(drop=True)
+
+
+class EntityTags(str, Enum):
+    """
+    Following mozafari2020, we encode the following entities:
+    < user >, < number >, < hashtag >, < url >, < emoticon >.
+    Additionally, we also encode emojis as < emoji >.
+    """
+    USER = '<user>',
+    NUMBER = '<number>',
+    HASHTAG = '<hashtag>',
+    URL = '<url>',
+    EMOTICON = '<emoticon>',
+    EMOJI = '<emoji>'
+
+
+# precompile all regular expressions
+regex_user = re.compile(r'@\w+')
+regex_number = re.compile(r'\d+')
+regex_hashtag = re.compile(r'#\w+')
+regex_url = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%\d{2}[a-fA-F]))+')
+regex_emoticon = re.compile(r'(:\)|:\(|:D|:P)')
+regex_punctuation = re.compile(r'[^\w\s]')
+regex_unknown_unicode = re.compile(r'\\u[0-9a-fA-F]{4}')
+regex_multiple_spaces = re.compile("\s\s+")
+regex_quotes = re.compile(r'["“”]+')
+regex_newlines = re.compile(r'[\r\n]+')
+regex_elongated = re.compile(r'(.)\1{2,}')
+
+
+word_list = set(words.words())
+
+
+def split_hashtag(hashtag,):
+    s = hashtag
+    result = []
+
+    while s:
+        found = False
+        for i in range(len(s), 0, -1):
+            if s[:i].lower() in word_list:
+                result.append(s[:i])
+                s = s[i:]
+                found = True
+                break
+        if not found:
+            result.append(s)
+            break
+
+    return ' '.join(result)
 
 
 def replace_entities(text):
-    text = re.sub(r'@\w+', 'user ', text)
-
-    text = re.sub(r'\d+', 'number ', text)
-
-    text = re.sub(r'#\w+', lambda m: 'hashtag ' + m.group(0)[1:], text)
-
-    text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%\d{2}[a-fA-F]))+', 'url ', text)
-
-    text = re.sub(r'(:\)|:\(|:D|:P)', lambda m: 'emoticon ', text)
-
-    text = emoji.replace_emoji(text, replace='emoji ')
+    text = regex_user.sub(EntityTags.USER, text)
+    text = regex_number.sub(EntityTags.NUMBER, text)
+    text = regex_hashtag.sub(lambda m: EntityTags.HASHTAG + split_hashtag(m.group(0)[1:]), text)
+    text = regex_url.sub(EntityTags.URL, text)
+    text = regex_emoticon.sub(lambda m: EntityTags.EMOTICON, text)
+    text = emoji.replace_emoji(text, replace=str(EntityTags.EMOJI.value))
 
     return text
 
 
 def replace_elongated_words(text):
     """
-     Replacing three or more consecutive identical characters with one.
+    Replacing three or more consecutive identical characters with one.
     """
-    return re.sub(r'(.)\1{2,}', r'\1', text)
+    return regex_elongated.sub(r'\1', text)
 
 
 def remove_multiple_spaces(text: str) -> str:
-    return re.sub("\s\s+", " ", text)
+    return regex_multiple_spaces.sub(" ", text)
 
 
 def remove_quotes(text) -> str:
-    return re.sub(r"[\"“”']", '', text)
+    return regex_quotes.sub('', text)
 
 
 def remove_newlines(text) -> str:
-    """Replace occurrences of \r, \n, or \r\n (in any combination) with a single space.
     """
-    return re.sub(r'[\r\n]+', ' ', text)
+    Replace occurrences of \r, \n, or \r\n (in any combination) with a single space.
+    """
+    return regex_newlines.sub(' ', text)
 
 
 def remove_punctuation(text: str) -> str:
-    return re.sub(r'[^\w\s]', '', text)
+    """
+    Remove all punctuation, but keep the entities intact.
+    """
+    entity_placeholders = {
+        "<user>": "USERENTITY",
+        "<number>": "NUMBERENTITY",
+        "<hashtag>": "HASHTAGENTITY",
+        "<url>": "URLENTITY",
+        "<emoticon>": "EMOTICONENTITY",
+        "<emoji>": "EMOJIENTITY"
+    }
+
+    # replace entities with placeholders
+    for entity, placeholder in entity_placeholders.items():
+        text = text.replace(entity, placeholder)
+
+    # remove punctuation
+    text = regex_punctuation.sub('', text)
+
+    # restore entities
+    for entity, placeholder in entity_placeholders.items():
+        text = text.replace(placeholder, entity)
+
+    return text
+
+
+def remove_unknown_unicodes(text: str) -> str:
+    return regex_unknown_unicode.sub('', text)
 
 
 def clean_html_content(text: str) -> str:
@@ -80,6 +164,9 @@ def clean_html_content(text: str) -> str:
 
 
 def preprocess(text: str) -> str:
+    """
+    All steps following mozafari2020 (4.2).
+    """
     text = remove_newlines(text)
     text = clean_html_content(text)
     text = remove_quotes(text)
