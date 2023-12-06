@@ -10,9 +10,23 @@ data_test = pd.read_csv("/Users/johann/Documents/Uni/real-time-uncertainty-text-
 
 def test_pos_guided_word_replacement():
     word_distribution = WordDistributionByPOSTag(data_test['text'])
-    sequence = "this is a totally normal test sentence"
+    sequence = 'this is a totally normal test sentence <hashtag>'
     p_pos = 1
-    assert pos_guided_word_replacement(word_distribution, sequence, p_pos) == "this call a only new i soccer"
+    assert pos_guided_word_replacement(word_distribution, sequence, p_pos) == 'this give a already i bitch minute <hashtag>'
+
+    sequence_tags_only = ' '.join(ENTITY_PLACEHOLDERS.keys())
+    assert pos_guided_word_replacement(word_distribution, sequence_tags_only, p_pos) == sequence_tags_only
+
+
+def test_synonym_replacement():
+    words = ['this', 'is', 'a', '<hashtag>', 'test']
+    p = 0.5
+    new_words = synonym_replacement(words, p)
+    assert new_words != words and '<hashtag>' in new_words
+
+    tags_only = ENTITY_PLACEHOLDERS.keys()
+    new_words = synonym_replacement(tags_only, p)
+    assert new_words == [key for key in ENTITY_PLACEHOLDERS.keys()]
 
 
 def test_random_insertion():

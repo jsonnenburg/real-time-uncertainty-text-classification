@@ -58,6 +58,19 @@ class EntityTags(str, Enum):
     EMOTICON = '<emoticon> ',
     EMOJI = ' <emoji> '
 
+    def __str__(self):
+        return self.value
+
+
+ENTITY_PLACEHOLDERS = {
+    "<user>": "USERENTITY",
+    "<number>": "NUMBERENTITY",
+    "<hashtag>": "HASHTAGENTITY",
+    "<url>": "URLENTITY",
+    "<emoticon>": "EMOTICONENTITY",
+    "<emoji>": "EMOJIENTITY"
+}
+
 
 # precompile all regular expressions
 regex_user = re.compile(r'@\w+')
@@ -101,7 +114,7 @@ def replace_entities(text):
     text = regex_number.sub(EntityTags.NUMBER, text)
     text = regex_hashtag.sub(lambda m: EntityTags.HASHTAG + split_hashtag(m.group(0)[1:]), text)
     text = regex_emoticon.sub(lambda m: EntityTags.EMOTICON, text)
-    text = emoji.replace_emoji(text, replace=str(EntityTags.EMOJI.value))
+    text = emoji.replace_emoji(text, replace=str(EntityTags.EMOJI))
 
     return text
 
@@ -132,24 +145,15 @@ def remove_punctuation(text: str) -> str:
     """
     Remove all punctuation, but keep the entities intact.
     """
-    entity_placeholders = {
-        "<user>": "USERENTITY",
-        "<number>": "NUMBERENTITY",
-        "<hashtag>": "HASHTAGENTITY",
-        "<url>": "URLENTITY",
-        "<emoticon>": "EMOTICONENTITY",
-        "<emoji>": "EMOJIENTITY"
-    }
-
     # replace entities with placeholders
-    for entity, placeholder in entity_placeholders.items():
+    for entity, placeholder in ENTITY_PLACEHOLDERS.items():
         text = text.replace(entity, placeholder)
 
     # remove punctuation
     text = regex_punctuation.sub('', text)
 
     # restore entities
-    for entity, placeholder in entity_placeholders.items():
+    for entity, placeholder in ENTITY_PLACEHOLDERS.items():
         text = text.replace(placeholder, entity)
 
     return text

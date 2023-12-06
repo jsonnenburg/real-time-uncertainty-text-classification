@@ -5,6 +5,8 @@ import nltk
 # nltk.download('wordnet')
 # nltk.download('averaged_perceptron_tagger')
 
+from src.data.robustness_study.shared_data_preprocessing import EntityTags, ENTITY_PLACEHOLDERS
+
 
 random.seed(1)
 
@@ -39,8 +41,11 @@ class WordDistributionByPOSTag:
     def get_word_freq_by_pos(self, data):
         word_freq_by_pos = {}
         for sentence in data:
+            sentence = preprocess_sequence(sentence)
             tokenized_and_tagged = nltk.pos_tag(nltk.word_tokenize(sentence))
             for word, pos in tokenized_and_tagged:
+                if word in ENTITY_PLACEHOLDERS.values():
+                    continue
                 wordnet_pos = self.nltk_to_wordnet_pos(pos)
                 if wordnet_pos:
                     if wordnet_pos not in word_freq_by_pos:
@@ -60,19 +65,44 @@ class WordDistributionByPOSTag:
         return chosen_word
 
 
+def preprocess_sequence(sequence):
+    for tag, placeholder in ENTITY_PLACEHOLDERS.items():
+        sequence = sequence.replace(tag, placeholder)
+    return sequence
+
+
+def postprocess_sequence(sequence):
+    for tag, placeholder in ENTITY_PLACEHOLDERS.items():
+        sequence = sequence.replace(placeholder, tag)
+    return sequence
+
+
 def tokenize_and_pos_tag(sequence):
-    return nltk.pos_tag(nltk.word_tokenize(sequence))
+    sequence = preprocess_sequence(sequence)
+    tagged_sequence = nltk.pos_tag(nltk.word_tokenize(sequence))
+    return [(postprocess_sequence(word), pos) for word, pos in tagged_sequence]
 
 
 def pos_guided_word_replacement(word_distribution, sequence, p_pos):
+    """
+    Replace each word in the sequence with another word of the same POS tag with probability p_pos.
+    :param word_distribution:
+    :param sequence:
+    :param p_pos:
+    :return: The sequence with some words replaced by words of the same POS tag.
+    """
     tokenized_and_tagged = tokenize_and_pos_tag(sequence)
     new_sequence = []
     for word, pos in tokenized_and_tagged:
+        if word in ENTITY_PLACEHOLDERS.keys():
+            new_sequence.append(word)
+            continue
         wordnet_pos = word_distribution.nltk_to_wordnet_pos(pos)
+        word_replacement = word
         if random.random() < p_pos and wordnet_pos:
             same_pos_word = word_distribution.get_words_with_same_pos(wordnet_pos)
-            word = same_pos_word if same_pos_word else word
-        new_sequence.append(word)
+            word_replacement = same_pos_word if same_pos_word else word
+        new_sequence.append(word_replacement)
     return ' '.join(new_sequence)
 
 
@@ -95,6 +125,9 @@ def synonym_replacement(words, p):
     new_words = []
 
     for word in words:
+        if word in ENTITY_PLACEHOLDERS.keys():
+            new_words.append(word)
+            continue
         if random.uniform(0, 1) <= p:
             synonyms = get_synonyms(word)
             if synonyms:
