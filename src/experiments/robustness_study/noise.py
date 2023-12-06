@@ -223,10 +223,8 @@ def swap_word(new_words):
 
 def random_insertion(words, p):
     """
-    TODO: replace get synonyms by random word
-
-    For each word in the sentence, with a probability p, insert a randomly chosen word
-    either before or after the word in the sentence.
+    For each word in the sentence, with a probability p, find a random synonym and insert it either before or after the
+    word in the sentence.
 
     :param words: List of words to insert into.
     :param p: Probability with which each word will have another word inserted nearby.
