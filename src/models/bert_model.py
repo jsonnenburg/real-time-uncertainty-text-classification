@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional, Union, Tuple
+from typing import Optional, Union, Tuple, Any
 
 import numpy as np
+from tensorflow import Tensor
 from transformers import TFBertForSequenceClassification, BertConfig
 import tensorflow as tf
 from transformers.modeling_tf_outputs import TFSequenceClassifierOutput
@@ -62,9 +63,9 @@ class MCDropoutTFBertForSequenceClassification(TFBertForSequenceClassification):
 
 
 class CustomTFSequenceClassifierOutput(TFSequenceClassifierOutput):
-    def __init__(self, loss=None, logits=None, hidden_states=None, attentions=None, log_variance=None):
+    def __init__(self, loss=None, logits=None, hidden_states=None, attentions=None, log_variances=None):
         super().__init__(loss=loss, logits=logits, hidden_states=hidden_states, attentions=attentions)
-        self.log_variance = log_variance
+        self.log_variances = log_variances
 
 
 class MCDropoutBERTDoubleHead(MCDropoutTFBertForSequenceClassification):
@@ -87,7 +88,7 @@ class MCDropoutBERTDoubleHead(MCDropoutTFBertForSequenceClassification):
             return_dict: Optional[bool] = None,
             labels: np.ndarray | tf.Tensor | None = None,
             training: Optional[bool] = False,
-    ) -> Union[TFSequenceClassifierOutput, Tuple[tf.Tensor]]:
+    ) -> Tuple[Tensor | None, Tensor, Any] | CustomTFSequenceClassifierOutput:
         outputs = super().call(
             input_ids,
             attention_mask,
@@ -103,17 +104,19 @@ class MCDropoutBERTDoubleHead(MCDropoutTFBertForSequenceClassification):
         )
 
         pooled_output = outputs[1]
-        log_variance = self.log_variance_predictor(pooled_output)
+        log_variances = self.log_variance_predictor(pooled_output)
 
         if not return_dict:
-            return outputs + (log_variance,)
+            loss = outputs.loss if labels is not None else None
+            logits = outputs.logits
+            return loss, logits, log_variances
 
         return CustomTFSequenceClassifierOutput(
             loss=outputs.loss,
             logits=outputs.logits,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
-            log_variance=log_variance,
+            log_variances=log_variances,
         )
 
 

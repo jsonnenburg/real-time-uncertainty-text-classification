@@ -1,16 +1,15 @@
 import tensorflow as tf
 
-# TODO: figure out output format of customized BERT model
 
-
-# aleatoric uncertainty loss (Kendall & Gal, 2017)
-def aleatoric_loss(y_true, y_pred):
-    """Aleatoric uncertainty loss function from Kendall & Gal (2017) for fine-tuning the teacher model.
+def aleatoric_loss(y_true, y_pred_logits, y_pred_log_variance):
+    """
+    Aleatoric uncertainty loss function from Kendall & Gal (2017) for fine-tuning the teacher model.
     Does not require ground truth variance.
     """
     # y_pred is assumed to contain both logits and log variance, concatenated
     # The first half of the dimensions are the logits, the second half the log variances
-    logits, log_variances = tf.split(y_pred, num_or_size_splits=2, axis=1)
+    logits = y_pred_logits
+    log_variances = y_pred_log_variance
 
     # Standard cross-entropy loss between logits and true labels
     cross_entropy_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y_true, logits=logits)
@@ -23,9 +22,9 @@ def aleatoric_loss(y_true, y_pred):
     return tf.reduce_mean(adjusted_loss)
 
 
-# student transfer learning loss (Shen et al., 2021)
 def gaussian_mle_loss(y_true, y_pred_mean, y_pred_log_variance):
-    """Gaussian MLE loss function from Shen et al. (2021) for fine-tuning the student model.
+    """
+    Gaussian MLE loss function from Shen et al. (2021) for fine-tuning the student model on the teacher's predictions.
     """
     mu_i, log_variance_i = y_pred_mean, y_pred_log_variance
 
@@ -37,7 +36,8 @@ def gaussian_mle_loss(y_true, y_pred_mean, y_pred_log_variance):
 
 
 def shen_loss(y_true, y_pred, weight=1):
-    """Transfer learning loss function from Shen et al. (2021) for fine-tuning the student model.
+    """
+    Transfer learning loss function from Shen et al. (2021) for fine-tuning the student model.
     Weight corresponds to Lambda in the paper.
 
     y_true = Tuple(actual ground truth, teacher predictive sample)
