@@ -1,6 +1,7 @@
 import os
 import argparse
 from noise import introduce_noise, WordDistributionByPOSTag
+from src.utils.processing import parallel_apply
 import pandas as pd
 import logging
 
@@ -18,7 +19,7 @@ p_values = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
 
 
 def generate_noisy_test_data(input_file, output_dir, p_sr, p_pr, p_ri, p_rs, p_rd):
-    print(f"Generating noisy sequences... \n"
+    logger.info(f"Generating noisy sequences... \n"
           f"p_sr: {p_sr}, p_pr: {p_pr}, p_ri: {p_ri}, p_rs: {p_rs}, p_rd: {p_rd}.")
     input_data = pd.read_csv(input_file, sep='\t')
 
@@ -36,13 +37,13 @@ def generate_noisy_test_data(input_file, output_dir, p_sr, p_pr, p_ri, p_rs, p_r
         word_distribution = None
 
     try:
-        input_data['text'] = input_data['text'].apply(
-            lambda x: introduce_noise(x, word_distribution, p_sr=p_sr, p_pr=p_pr, p_ri=p_ri, p_rs=p_rs, p_rd=p_rd))
+        input_data['text'] = parallel_apply(input_data['text'], introduce_noise, word_distribution=word_distribution,
+                                            p_sr=p_sr, p_pr=p_pr, p_ri=p_ri, p_rs=p_rs, p_rd=p_rd)
     except Exception as e:
         logger.error("Failed to generate noisy sequences: " + str(e))
 
     input_data.to_csv(os.path.join(output_dir, output_file_name), sep='\t', index=False)
-    print(f"Successfully generated noisy sequences for {input_file} and saved them to {output_dir}.")
+    logger.info(f"Successfully generated noisy sequences for {input_file} and saved them to {output_dir}.")
 
 
 def main():
