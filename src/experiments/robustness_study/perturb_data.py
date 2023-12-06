@@ -5,6 +5,7 @@ from src.utils.processing import parallel_apply
 import pandas as pd
 import logging
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ap = argparse.ArgumentParser()
@@ -26,7 +27,11 @@ def generate_noisy_test_data(input_file, output_dir, p_sr, p_pr, p_ri, p_rs, p_r
     if 'Unnamed: 0' in input_data.columns:
         input_data.drop('Unnamed: 0', axis=1, inplace=True)
 
-    os.makedirs(output_dir, exist_ok=True)
+    if os.path.exists(output_dir):
+        logger.info(f"Output directory {output_dir} already exists. \n"
+                    f"Overwriting existing files.")
+    else:
+        os.makedirs(output_dir, exist_ok=True)
 
     format_params = f"_psr{int(p_sr * 100):03d}_ppr{int(p_pr * 100):03d}_pri{int(p_ri * 100):03d}_prs{int(p_rs * 100):03d}_prd{int(p_rd * 100):03d}"
     output_file_name = os.path.basename(input_file).split('.')[0] + format_params + '.csv'
@@ -48,6 +53,7 @@ def generate_noisy_test_data(input_file, output_dir, p_sr, p_pr, p_ri, p_rs, p_r
 
 def main():
     input_file = os.path.join(input_dir, 'test.csv')
+    logger.info(f"Generating noisy sequences for {input_file}.")
     for p in p_values:
         generate_noisy_test_data(input_file, output_dir, p_sr=p, p_pr=0, p_ri=0,
                                  p_rs=0, p_rd=0)

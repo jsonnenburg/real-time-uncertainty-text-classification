@@ -5,8 +5,11 @@ import nltk
 # nltk.download('wordnet')
 # nltk.download('averaged_perceptron_tagger')
 
-from src.data.robustness_study.shared_data_preprocessing import EntityTags, ENTITY_PLACEHOLDERS
+from src.data.robustness_study.shared_data_preprocessing import ENTITY_PLACEHOLDERS
 
+from nltk.corpus import stopwords
+
+stopwords = stopwords.words("english")
 
 random.seed(1)
 
@@ -94,7 +97,7 @@ def pos_guided_word_replacement(word_distribution, sequence, p_pos):
     tokenized_and_tagged = tokenize_and_pos_tag(sequence)
     new_sequence = []
     for word, pos in tokenized_and_tagged:
-        if word in ENTITY_PLACEHOLDERS.keys():
+        if word in ENTITY_PLACEHOLDERS.keys() or word in stopwords:
             new_sequence.append(word)
             continue
         wordnet_pos = word_distribution.nltk_to_wordnet_pos(pos)
@@ -125,7 +128,7 @@ def synonym_replacement(words, p):
     new_words = []
 
     for word in words:
-        if word in ENTITY_PLACEHOLDERS.keys():
+        if word in ENTITY_PLACEHOLDERS.keys() or word in stopwords:
             new_words.append(word)
             continue
         if random.uniform(0, 1) <= p:
