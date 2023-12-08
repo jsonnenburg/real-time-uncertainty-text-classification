@@ -9,4 +9,5 @@ module load python/3.8 # needed?
 module load cuda
 source ~/myenv/bin/activate # change
 
-python bert_finetune.py --learning_rate $1 --batch_size $2
+
+python bert_finetune.py --input_data_dir ./data/preprocessed/ --output_dir ./out/ --cleanup False

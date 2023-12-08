@@ -47,7 +47,7 @@ def shen_loss(y_true, y_pred, weight=1):
     y_true, y_teacher_pred_mean = y_true[:, 0], y_true[:, 1]
     # unpack the predictions, this assumes that the predictions are a vector of size 2
     y_student_pred_mean, y_student_pred_log_variance = y_pred[:, 0], y_pred[:, 1]
-    Lt = aleatoric_loss(y_true, y_student_pred_mean)
+    Lt = aleatoric_loss(y_true, y_student_pred_mean, y_student_pred_log_variance)
     Ls = gaussian_mle_loss(y_teacher_pred_mean, y_student_pred_mean, y_student_pred_log_variance)
     Ltotal = Ls + weight * Lt
 
