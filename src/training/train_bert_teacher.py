@@ -1,5 +1,4 @@
 import argparse
-import os
 import json
 from typing import Dict
 
@@ -12,11 +11,11 @@ from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1
                                pred_entropy_score, ece_score)
 
 from src.utils.loss_functions import aleatoric_loss
-from src.utils.data import SimpleDataLoader
+from src.utils.data import SimpleDataLoader, Dataset
 
 
 def compute_metrics(pred):
-    # TODO: write unit tests, adapt to BERT outputs
+    # TODO: write unit tests
     labels = pred.label_ids
     class_predictions = pred.predictions.argmax(-1)
     acc = accuracy_score(labels, class_predictions)
@@ -48,8 +47,8 @@ class AleatoricLossTrainer(TFTrainer):
         return loss
 
 
-def train_model(config: BertConfig, dataset: Dict, batch_size: int, learning_rate: float, epochs: int,
-                save_model: bool = False, training_final_model: bool = False):
+def train_model(config: BertConfig, dataset: Dataset, batch_size: int, learning_rate: float, epochs: int,
+                max_length: int = 48, save_model: bool = False, training_final_model: bool = False):
     model = MCDropoutBERTDoubleHead.from_pretrained('bert-base-uncased', config=config)
 
     if training_final_model:
@@ -61,9 +60,9 @@ def train_model(config: BertConfig, dataset: Dict, batch_size: int, learning_rat
     # settings?
     # see mozafari2020 section for details
     tokenized_dataset: Dict = dict(train=None, val=None, test=None)
-    tokenized_dataset['train'] = bert_preprocess(dataset['train'])
-    tokenized_dataset['val'] = bert_preprocess(dataset['val']) if dataset['val'] is not None else None
-    tokenized_dataset['test'] = bert_preprocess(dataset['test'])
+    tokenized_dataset['train'] = bert_preprocess(dataset.train, max_length=max_length)
+    tokenized_dataset['val'] = bert_preprocess(dataset.val, max_length=max_length) if dataset.val is not None else None
+    tokenized_dataset['test'] = bert_preprocess(dataset.test, max_length=max_length)
 
     training_args = TFTrainingArguments(
         output_dir=f"./{dir_prefix}_results_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}",
@@ -95,14 +94,14 @@ def train_model(config: BertConfig, dataset: Dict, batch_size: int, learning_rat
 ########################################################################################################################
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--input_data_dir", type=str)
 parser.add_argument("--learning_rate", type=float, default=2e-5)
 parser.add_argument("--batch_size", type=int, default=32)
 parser.add_argument("--epochs", type=int, default=3)
+parser.add_argument("--max_length", type=int, default=48)
+parser.add_argument("--output_dir", type=str, default="out")
 args = parser.parse_args()
 
-
-# placeholder for dataset
-# TODO: implement dataset loader
 data_loader = SimpleDataLoader(dataset_dir="data/robustness_study/preprocessed")
 data_loader.load_dataset()
 dataset = data_loader.get_dataset()
@@ -124,7 +123,15 @@ for hidden_dropout in hidden_dropout_probs:
             best_dropout_combination = (hidden_dropout, attention_dropout, classifier_dropout)
             try:
                 config = create_bert_config(hidden_dropout, attention_dropout, classifier_dropout)
-                f1 = train_model(config=config, dataset=dataset, batch_size=args.batch_size, learning_rate=args.learning_rate, epochs=args.epochs)
+                f1 = train_model(config=config,
+                                 dataset=dataset,
+                                 batch_size=args.batch_size,
+                                 learning_rate=args.learning_rate,
+                                 epochs=args.epochs,
+                                 max_length=args.max_length,
+                                 save_model=False,
+                                 training_final_model=False)
+                # TODO: shouldn't we instead evaluate the MC dropout performance (more in line with shen2021)?
                 if f1 > best_f1:
                     best_F1 = f1
                     best_dropout_combination = (hidden_dropout, attention_dropout, classifier_dropout)
@@ -133,11 +140,8 @@ for hidden_dropout in hidden_dropout_probs:
 
 # Retrain the best model on the combination of train and validation set
 # Update your dataset to include both training and validation data
-combined_dataset = dict(train=None, val=None, test=None)
-combined_training = dataset['train'] + dataset['val']   # placeholder is None
-combined_dataset['train'] = bert_preprocess(combined_training)
-combined_dataset['val'] = None
-combined_dataset['test'] = dataset['test']
+combined_training = dataset.train + dataset.val
+combined_dataset = Dataset(train=combined_training, test=dataset.test)
 
 if best_dropout_combination is None:
     raise ValueError("No best dropout combination saved.")

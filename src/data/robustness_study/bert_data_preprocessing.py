@@ -28,7 +28,13 @@ def bert_tokenize(all_sequences, max_length) -> Tuple[np.ndarray, np.ndarray]:
     return input_ids, attention_masks
 
 
-def bert_preprocess(preprocessed_data, max_length=MAX_LEN):
+def bert_preprocess(preprocessed_data, max_length=MAX_LEN) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Preprocesses the data for BERT.
+    :param preprocessed_data: The preprocessed data.
+    :param max_length: The maximum length of the sequences.
+    :return: Tuple of input_ids, attention_masks, labels
+    """
     sequences, labels = preprocessed_data['text'].values, preprocessed_data['target'].values
     input_ids, attention_masks = bert_tokenize(sequences, max_length)
 
