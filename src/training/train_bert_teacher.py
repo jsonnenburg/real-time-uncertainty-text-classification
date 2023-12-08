@@ -12,9 +12,11 @@ from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1
                                pred_entropy_score, ece_score)
 
 from src.utils.loss_functions import aleatoric_loss
+from src.utils.data import SimpleDataLoader
 
 
 def compute_metrics(pred):
+    # TODO: write unit tests, adapt to BERT outputs
     labels = pred.label_ids
     class_predictions = pred.predictions.argmax(-1)
     acc = accuracy_score(labels, class_predictions)
@@ -46,12 +48,14 @@ class AleatoricLossTrainer(TFTrainer):
         return loss
 
 
-# placeholder for dataset
-dataset = {"train": None, "val": None, "test": None}
-
-
-def train_model(config: BertConfig, dataset: Dict, batch_size: int, learning_rate: float, epochs: int):
+def train_model(config: BertConfig, dataset: Dict, batch_size: int, learning_rate: float, epochs: int,
+                save_model: bool = False, training_final_model: bool = False):
     model = MCDropoutBERTDoubleHead.from_pretrained('bert-base-uncased', config=config)
+
+    if training_final_model:
+        dir_prefix = "final"
+    else:
+        dir_prefix = "temp"
 
     # TODO: Tokenize the dataset
     # settings?
@@ -62,10 +66,10 @@ def train_model(config: BertConfig, dataset: Dict, batch_size: int, learning_rat
     tokenized_dataset['test'] = bert_preprocess(dataset['test'])
 
     training_args = TFTrainingArguments(
-        output_dir=f"./results_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}",
+        output_dir=f"./{dir_prefix}_results_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}",
         per_device_train_batch_size=batch_size,
         num_train_epochs=epochs,
-        logging_dir=f'./logs_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}',
+        logging_dir=f'./{dir_prefix}_logs_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}',
     )
 
     trainer = AleatoricLossTrainer(
@@ -73,15 +77,17 @@ def train_model(config: BertConfig, dataset: Dict, batch_size: int, learning_rat
         args=training_args,
         train_dataset=tokenized_dataset["train"],
         eval_dataset=tokenized_dataset["val"] if tokenized_dataset["val"] is not None else tokenized_dataset["test"],
-        optimizers=([tf.keras.optimizers.Adam(learning_rate=learning_rate)], []),  # TODO: which scheduler?
+        optimizers=([tf.keras.optimizers.Adam(learning_rate=learning_rate)], []),  # TODO: which scheduler with which parameters?
         compute_metrics=compute_metrics
     )
 
     trainer.train()
     eval_results = trainer.evaluate()
 
-    model.save_pretrained(f"./model_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}")
-    with open(f"./results_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}/eval_results.json", 'w') as f:
+    if save_model:
+        model.save_pretrained(f"./{dir_prefix}_model_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}")
+
+    with open(f"./{dir_prefix}_results_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}/eval_results.json", 'w') as f:
         json.dump(eval_results, f)
 
     return eval_results["f1_score"]
@@ -93,6 +99,13 @@ parser.add_argument("--learning_rate", type=float, default=2e-5)
 parser.add_argument("--batch_size", type=int, default=32)
 parser.add_argument("--epochs", type=int, default=3)
 args = parser.parse_args()
+
+
+# placeholder for dataset
+# TODO: implement dataset loader
+data_loader = SimpleDataLoader(dataset_dir="data/robustness_study/preprocessed")
+data_loader.load_dataset()
+dataset = data_loader.get_dataset()
 
 # define dropout probabilities for grid search
 hidden_dropout_probs = [0.1, 0.2, 0.3]
@@ -130,10 +143,7 @@ if best_dropout_combination is None:
     raise ValueError("No best dropout combination saved.")
 else:
     best_config = create_bert_config(best_dropout_combination[0], best_dropout_combination[1], best_dropout_combination[2])
-    # below returns the eval score!!!
-    best_model = train_model(best_config, combined_dataset, args.learning_rate, args.batch_size, args.epochs)
+    # train model, save results
+    best_f1 = train_model(best_config, combined_dataset, args.learning_rate, args.batch_size, args.epochs, save_model=True, training_final_model=True)
 
-    # Save the final model
-    best_model.save_pretrained(f"./best_model_hd{best_dropout_combination[0]}_ad{best_dropout_combination[1]}_cd{best_dropout_combination[2]}")
-
-# Clean-up code here (if needed)
+# clean up all temp files if necessary
