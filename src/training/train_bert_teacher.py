@@ -1,5 +1,7 @@
 import argparse
 import json
+import os
+import shutil
 from typing import Dict
 
 import tensorflow as tf
@@ -56,9 +58,6 @@ def train_model(config: BertConfig, dataset: Dataset, batch_size: int, learning_
     else:
         dir_prefix = "temp"
 
-    # TODO: Tokenize the dataset
-    # settings?
-    # see mozafari2020 section for details
     tokenized_dataset: Dict = dict(train=None, val=None, test=None)
     tokenized_dataset['train'] = bert_preprocess(dataset.train, max_length=max_length)
     tokenized_dataset['val'] = bert_preprocess(dataset.val, max_length=max_length) if dataset.val is not None else None
@@ -100,6 +99,8 @@ parser.add_argument("--batch_size", type=int, default=32)
 parser.add_argument("--epochs", type=int, default=3)
 parser.add_argument("--max_length", type=int, default=48)
 parser.add_argument("--output_dir", type=str, default="out")
+parser.add_argument("--seed", type=int, default=42)
+parser.add_argument("--cleanup", type=bool, default=False)
 args = parser.parse_args()
 
 data_loader = SimpleDataLoader(dataset_dir="data/robustness_study/preprocessed")
@@ -150,4 +151,8 @@ else:
     # train model, save results
     best_f1 = train_model(best_config, combined_dataset, args.learning_rate, args.batch_size, args.epochs, save_model=True, training_final_model=True)
 
-# clean up all temp files if necessary
+if args.cleanup:
+   # remove all dirs that start with "temp"
+    for directory in os.listdir("."):
+        if os.path.isdir(directory) and directory.startswith("temp"):
+            shutil.rmtree(directory)
