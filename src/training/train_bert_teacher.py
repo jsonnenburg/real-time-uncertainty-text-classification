@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 
+import numpy as np
 import tensorflow as tf
 from keras.callbacks import TensorBoard
 
@@ -29,7 +30,7 @@ def compute_metrics(output):
         logits = output[1]
         labels = output[0]
 
-    if logits and labels:
+    if logits is not None and labels is not None:
         class_predictions = logits.argmax(-1)
         prob_predictions = tf.nn.softmax(logits, axis=-1)
         labels_np = labels.numpy() if isinstance(labels, tf.Tensor) else labels
@@ -43,17 +44,19 @@ def compute_metrics(output):
         f1 = f1_score(labels_np, class_predictions_np)
         nll = nll_score(labels_np, prob_predictions_np)
         bs = brier_score(labels_np, prob_predictions_np)
-        entropy = pred_entropy_score(prob_predictions_np)
+        avg_entropy = np.mean(pred_entropy_score(prob_predictions_np))
         ece = ece_score(labels_np, class_predictions_np, prob_predictions_np)
-        return {"accuracy_score": acc,
-                "precision_score": prec,
-                "recall_score": rec,
-                "f1_score": f1,
-                "nll_score": nll,
-                "brier_score": bs,
-                "pred_entropy_score": entropy,
-                "ece_score": ece,
-                }
+        return {
+            "accuracy_score": acc.item() if np.isscalar(acc) else acc.tolist(),
+            "precision_score": prec.item() if np.isscalar(prec) else prec.tolist(),
+            "recall_score": rec.item() if np.isscalar(rec) else rec.tolist(),
+            "f1_score": f1.item() if np.isscalar(f1) else f1.tolist(),
+            "nll_score": nll.item() if np.isscalar(nll) else nll.tolist(),
+            "brier_score": bs.item() if np.isscalar(bs) else bs.tolist(),
+            "avg_pred_entropy_score": avg_entropy.item() if np.isscalar(avg_entropy) else avg_entropy.tolist(),
+            "ece_score": ece.item() if np.isscalar(ece) else ece.tolist(),
+        }
+
 
 
 def compute_mc_dropout_metrics(labels, mean_predictions):
@@ -66,9 +69,9 @@ def compute_mc_dropout_metrics(labels, mean_predictions):
     y_prob_np = y_prob.numpy().flatten() if isinstance(y_prob, tf.Tensor) else y_prob
 
     acc = accuracy_score(labels_np, y_pred_np)
-    prec = precision_score(labels_np, y_pred)
-    rec = recall_score(labels_np, y_pred)
-    f1 = f1_score(labels_np, y_pred)
+    prec = precision_score(labels_np, y_pred_np)
+    rec = recall_score(labels_np, y_pred_np)
+    f1 = f1_score(labels_np, y_pred_np)
     nll = nll_score(labels_np, y_prob_np)
     bs = brier_score(labels_np, y_prob_np)
     entropy = pred_entropy_score(y_prob_np)
@@ -151,12 +154,23 @@ def train_model(config, dataset: Dataset, batch_size: int, learning_rate: float,
 
     predictions = model.predict(eval_data)
 
-    logits = predictions.logits 
-    labels = eval_data[1] 
+    logits = predictions.logits
+    labels = None
+    if isinstance(eval_data, tf.data.Dataset):
+        for batch in eval_data.take(1):
+            _, labels = batch  # Assuming the dataset yields (features, labels)
+            break
+    else:
+        logits = predictions.logits
+        labels = eval_data[1]
 
     eval_metrics = compute_metrics((labels, logits))
+    os.makedirs(generate_file_path('results'), exist_ok=True)
     with open(generate_file_path('results') + '/eval_results.json', 'w') as f:
         json.dump(eval_metrics, f)
+
+    # TODO: maybe rather have one dir per model and save everything in there
+    # TODO: add model info to eval output JSON?
     
     if save_model:
         model.save_pretrained(generate_file_path('model'))

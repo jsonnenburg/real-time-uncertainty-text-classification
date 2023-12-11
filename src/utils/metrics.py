@@ -11,24 +11,29 @@ def accuracy_score(y_true, y_pred):
 
 
 def precision_score(y_true, y_pred):
+    y_true = np.squeeze(y_true)
     return np.mean(y_true[y_pred == 1] == y_pred[y_pred == 1])
 
 
 def recall_score(y_true, y_pred):
+    y_true = np.squeeze(y_true)
     return np.mean(y_true[y_true == 1] == y_pred[y_true == 1])
 
 
 def f1_score(y_true, y_pred):
+    y_true = np.squeeze(y_true)
     precision = precision_score(y_true, y_pred)
     recall = recall_score(y_true, y_pred)
     return 2 * (precision * recall) / (precision + recall)
 
 
 def nll_score(y_true, y_prob):
+    y_true = np.squeeze(y_true)
     return log_loss(y_true, y_prob)
 
 
 def brier_score(y_true, y_prob):
+    y_true = np.squeeze(y_true)
     return brier_score_loss(y_true, y_prob)
 
 
@@ -37,6 +42,7 @@ def pred_entropy_score(y_prob):
 
 
 def ece_score(y_true, y_pred, y_prob, n_bins=10):
+    y_true = np.squeeze(y_true)
     bin_limits = np.linspace(0, 1, n_bins + 1)
     bin_lowers = bin_limits[:-1]
     bin_uppers = bin_limits[1:]

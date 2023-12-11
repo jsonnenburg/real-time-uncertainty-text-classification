@@ -12,7 +12,7 @@ from transformers.modeling_tf_utils import get_initializer, TFModelInputType
 
 class CustomTFSequenceClassifierOutput(TFSequenceClassifierOutput):
     def __init__(self, labels=None, loss=None, logits=None, hidden_states=None, attentions=None, log_variances=None):
-        super().__init__(labels=labels, loss=loss, logits=logits, hidden_states=hidden_states, attentions=attentions)
+        super().__init__(loss=loss, logits=logits, hidden_states=hidden_states, attentions=attentions)
         self.labels = labels
         self.log_variances = log_variances
 
