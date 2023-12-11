@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Dict
 
 from transformers import BertTokenizer
 import tensorflow as tf
@@ -28,3 +28,14 @@ def bert_preprocess(preprocessed_data, max_length=48) -> Tuple[tf.Tensor, tf.Ten
     labels = tf.constant(labels)
 
     return input_ids, attention_masks, labels
+
+
+def get_tf_dataset(tokenized_dataset: Dict, subset: str) -> tf.data.Dataset:
+    dataset = tf.data.Dataset.from_tensor_slices((
+        {
+            'input_ids': tokenized_dataset[subset][0],
+            'attention_mask': tokenized_dataset[subset][1]
+        },
+        tokenized_dataset[subset][2]  # labels
+    ))
+    return dataset

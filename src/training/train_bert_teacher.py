@@ -5,29 +5,18 @@ import shutil
 
 import tensorflow as tf
 from keras.callbacks import TensorBoard
-from transformers import BertConfig
 
 import logging
 
 from src.models.bert_model import create_bert_config, MCDropoutBERT, CustomTFSequenceClassifierOutput
-from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
+from src.data.robustness_study.bert_data_preprocessing import bert_preprocess, get_tf_dataset
+
 from src.utils.inference import mc_dropout_predict
 from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, nll_score, brier_score,
                                pred_entropy_score, ece_score)
-
 from src.utils.loss_functions import aleatoric_loss
 from src.utils.data import SimpleDataLoader, Dataset
-
-
-class HistorySaver(tf.keras.callbacks.Callback):
-    def __init__(self, file_path):
-        super(HistorySaver, self).__init__()
-        self.file_path = file_path
-
-    def on_epoch_end(self, epoch, logs=None):
-        logs = logs or {}
-        with open(self.file_path, 'a') as f:
-            f.write(f"Epoch {epoch + 1}: {logs}\n")
+from src.utils.training import HistorySaver
 
 
 def compute_metrics(output):
@@ -55,7 +44,7 @@ def compute_metrics(output):
         nll = nll_score(labels_np, prob_predictions_np)
         bs = brier_score(labels_np, prob_predictions_np)
         entropy = pred_entropy_score(prob_predictions_np)
-        ece = ece_score(labels_np, prob_predictions_np)
+        ece = ece_score(labels_np, class_predictions_np, prob_predictions_np)
         return {"accuracy_score": acc,
                 "precision_score": prec,
                 "recall_score": rec,
@@ -97,19 +86,36 @@ def compute_mc_dropout_metrics(labels, mean_predictions):
     }
 
 
-def train_model(config: BertConfig, dataset: Dataset, batch_size: int, learning_rate: float, epochs: int,
+def train_model(config, dataset: Dataset, batch_size: int, learning_rate: float, epochs: int,
                 max_length: int = 48, custom_loss=aleatoric_loss, mc_dropout_inference: bool = True,
                 save_model: bool = False, training_final_model: bool = False):
+    """
+    Trains a teacher BERT model and records the validation set performance, either for one stochastic forward pass or
+    for M stochastic forward passes, with dropout enabled (MC dropout).
+
+    :param config:
+    :param dataset:
+    :param batch_size:
+    :param learning_rate:
+    :param epochs:
+    :param max_length:
+    :param custom_loss:
+    :param mc_dropout_inference:
+    :param save_model:
+    :param training_final_model:
+    :return: eval_metrics
+    """
 
     model = MCDropoutBERT.from_pretrained('bert-base-uncased', config=config, custom_loss_fn=custom_loss)
 
-    if training_final_model:
-        dir_prefix = "final"
-    else:
-        dir_prefix = "temp"
+    suffix = f'hd{int(config.hidden_dropout_prob * 100):03d}_ad{int(config.attention_dropout * 100):03d}_cd{int(config.classifier_dropout * 100):03d}'
+    dir_prefix = 'temp' if not training_final_model else 'final'
+
+    def generate_file_path(identifier: str) -> str:
+        return f'./{dir_prefix}_{identifier}_{suffix}'
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    model.compile(optimizer=optimizer, metrics=['accuracy'])  # use internal model loss (defined above)
+    model.compile(optimizer=optimizer, metrics=['accuracy', 'precision', 'recall'])  # use internal model loss (defined above)
 
     tokenized_dataset = {
         'train': bert_preprocess(dataset.train, max_length=max_length),
@@ -117,37 +123,18 @@ def train_model(config: BertConfig, dataset: Dataset, batch_size: int, learning_
         'test': bert_preprocess(dataset.test, max_length=max_length)
     }
 
-    train_data = tf.data.Dataset.from_tensor_slices((
-        {
-            'input_ids': tokenized_dataset['train'][0],
-            'attention_mask': tokenized_dataset['train'][1]
-        },
-        tokenized_dataset['train'][2]  # labels
-    ))
+    train_data = get_tf_dataset(tokenized_dataset, 'train')
     train_data = train_data.shuffle(buffer_size=1024).batch(batch_size).prefetch(tf.data.AUTOTUNE)
-
+    # handle case where we group train and val together (best model config) and fine-tune on both
     if tokenized_dataset['val'] is not None:
-        val_data = tf.data.Dataset.from_tensor_slices((
-            {
-                'input_ids': tokenized_dataset['val'][0],
-                'attention_mask': tokenized_dataset['val'][1]
-            },
-            tokenized_dataset['val'][2]
-        ))
+        val_data = get_tf_dataset(tokenized_dataset, 'val')
         val_data = val_data.batch(batch_size).prefetch(tf.data.AUTOTUNE)
     else:
         val_data = None
-
-    test_data = tf.data.Dataset.from_tensor_slices((
-        {
-            'input_ids': tokenized_dataset['test'][0],
-            'attention_mask': tokenized_dataset['test'][1]
-        },
-        tokenized_dataset['test'][2]
-    ))
+    test_data = get_tf_dataset(tokenized_dataset, 'test')
     test_data = test_data.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
-    log_dir = f'./{dir_prefix}_logs_hd{int(config.hidden_dropout_prob * 100):03d}_ad{int(config.attention_dropout * 100):03d}_cd{config.classifier_dropout}'
+    log_dir = generate_file_path('logs')
     tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
 
     history_log_file = os.path.join(log_dir, "training_history.txt")
@@ -168,16 +155,16 @@ def train_model(config: BertConfig, dataset: Dataset, batch_size: int, learning_
     labels = eval_data[1] 
 
     eval_metrics = compute_metrics((labels, logits))
-    with open(f"./{dir_prefix}_results_hd{config.hidden_dropout}_ad{config.attention_dropout}_cd{config.classifier_dropout}/eval_results.json", 'w') as f:
+    with open(generate_file_path('results') + '/eval_results.json', 'w') as f:
         json.dump(eval_metrics, f)
     
     if save_model:
-        model.save_pretrained(f"./{dir_prefix}_model_hd{config.hidden_dropout}_ad{config.attention_dropout}_cd{config.classifier_dropout}")
+        model.save_pretrained(generate_file_path('model'))
 
     if mc_dropout_inference:
         mean_predictions, var_predictions = mc_dropout_predict(model, eval_data)
         mc_dropout_metrics = compute_mc_dropout_metrics(labels, mean_predictions)
-        with open(f"./{dir_prefix}_results_hd{config.hidden_dropout}_ad{config.attention_dropout}_cd{config.classifier_dropout}/mc_dropout_metrics.json", 'w') as f:
+        with open(generate_file_path('results') + '/mc_dropout_metrics.json', 'w') as f:
             json.dump(mc_dropout_metrics, f)
         return mc_dropout_metrics
 
@@ -240,7 +227,6 @@ def main(args):
         f1 = eval_metrics['eval_f1_score']
         logging.info(f"Final f1 score of best model configuration: {f1}")
     if args.cleanup:
-        # remove all dirs that start with "temp"
         for directory in os.listdir("."):
             if os.path.isdir(directory) and directory.startswith("temp"):
                 shutil.rmtree(directory)
