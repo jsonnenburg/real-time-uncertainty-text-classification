@@ -1,11 +1,9 @@
 import numpy as np
-import tensorflow as tf
 from sklearn.metrics import brier_score_loss, log_loss
 from scipy.stats import entropy
 
 # y_pred: need class predictions
 # y_prob: need probabilities for positive class
-# TODO: write unit tests for all metrics
 
 
 def accuracy_score(y_true, y_pred):

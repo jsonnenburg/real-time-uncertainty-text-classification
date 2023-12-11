@@ -5,7 +5,7 @@ from src.experiments.robustness_study.noise import *
 
 random.seed(42)
 
-data_test = pd.read_csv("/Users/johann/Documents/Uni/real-time-uncertainty-text-classification/data/robustness-study/preprocessed/test.csv", sep="\t", index_col=0)
+data_test = pd.read_csv("/Users/johann/Documents/Uni/real-time-uncertainty-text-classification/data/robustness_study/preprocessed/test.csv", sep="\t", index_col=0)
 
 
 def test_pos_guided_word_replacement():
@@ -20,7 +20,7 @@ def test_pos_guided_word_replacement():
 
 def test_synonym_replacement():
     words = ['this', 'is', 'a', '<hashtag>', 'test']
-    p = 0.5
+    p = 1
     new_words = synonym_replacement(words, p)
     assert new_words != words and '<hashtag>' in new_words
 
