@@ -1,9 +1,12 @@
 import numpy as np
+import tensorflow as tf
 from sklearn.metrics import brier_score_loss, log_loss
 from scipy.stats import entropy
 
+# y_pred: need class predictions
+# y_prob: need probabilities for positive class
+# TODO: write unit tests for all metrics
 
-# TODO: change y_pred to y_prob
 
 def accuracy_score(y_true, y_pred):
     return np.mean(y_true == y_pred)
@@ -36,8 +39,8 @@ def pred_entropy_score(y_prob):
 
 
 def ece_score(y_true, y_prob, n_bins=10):
-    # TODO: write unit test
-    y_pred = np.argmax(y_prob, axis=1)
+
+    y_pred = tf.argmax(y_prob, axis=-1)
     bin_limits = np.linspace(0, 1, n_bins + 1)
     bin_lowers = bin_limits[:-1]
     bin_uppers = bin_limits[1:]

@@ -4,9 +4,12 @@ import os
 import shutil
 from typing import Dict
 
-from transformers import TFTrainer, TFTrainingArguments, BertConfig, logger
+import tensorflow as tf
+from transformers import TFTrainer, TFTrainingArguments, BertConfig
 
-from src.models.bert_model import create_bert_config, MCDropoutBERTDoubleHead
+import logging
+
+from src.models.bert_model import create_bert_config, MCDropoutBERTDoubleHead, CustomTFSequenceClassifierOutput
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
 from src.utils.inference import mc_dropout_predict
 from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, nll_score, brier_score,
@@ -16,48 +19,62 @@ from src.utils.loss_functions import aleatoric_loss
 from src.utils.data import SimpleDataLoader, Dataset
 
 
-def compute_metrics(pred):
-    labels = pred.label_ids
-    class_predictions = pred.predictions.argmax(-1)
-    acc = accuracy_score(labels, class_predictions)
-    prec = precision_score(labels, class_predictions)
-    rec = recall_score(labels, class_predictions)
-    f1 = f1_score(labels, class_predictions)
-    nll = nll_score(labels, pred.predictions)
-    bs = brier_score(labels, pred.predictions)
-    entropy = pred_entropy_score(pred.predictions)
-    ece = ece_score(labels, pred.predictions)
-    return {"accuracy_score": acc,
-            "precision_score": prec,
-            "recall_score": rec,
-            "f1_score": f1,
-            "nll_score": nll,
-            "brier_score": bs,
-            "pred_entropy_score": entropy,
-            "ece_score": ece,
-            }
+def compute_metrics(output):
+    logits = None
+    labels = None
+    if isinstance(output, CustomTFSequenceClassifierOutput):
+        logits = output.logits
+        labels = output.labels
+    elif isinstance(output, tuple):
+        logits = output[1]
+        labels = output[0]
+
+    if logits and labels:
+        class_predictions = logits.argmax(-1)
+        prob_predictions = tf.nn.softmax(logits, axis=-1)
+        acc = accuracy_score(labels, class_predictions)
+        prec = precision_score(labels, class_predictions)
+        rec = recall_score(labels, class_predictions)
+        f1 = f1_score(labels, class_predictions)
+        nll = nll_score(labels, prob_predictions)
+        bs = brier_score(labels, prob_predictions)
+        entropy = pred_entropy_score(prob_predictions)
+        ece = ece_score(labels, prob_predictions)
+        return {"accuracy_score": acc,
+                "precision_score": prec,
+                "recall_score": rec,
+                "f1_score": f1,
+                "nll_score": nll,
+                "brier_score": bs,
+                "pred_entropy_score": entropy,
+                "ece_score": ece,
+                }
 
 
-def compute_metrics_for_mc_dropout(labels, predictions):
-    class_predictions = predictions.argmax(-1)
-    acc = accuracy_score(labels, class_predictions)
-    prec = precision_score(labels, class_predictions)
-    rec = recall_score(labels, class_predictions)
-    f1 = f1_score(labels, class_predictions)
-    nll = nll_score(labels, predictions)
-    bs = brier_score(labels, predictions)
-    entropy = pred_entropy_score(predictions)
-    ece = ece_score(labels, predictions)
+def compute_mc_dropout_metrics(labels, mean_predictions):
+    # TODO: adapt to output similar to compute_metrics
+    y_pred = tf.argmax(mean_predictions, axis=-1)
+    y_prob = tf.nn.sigmoid(mean_predictions, axis=-1)
 
-    return {"accuracy_score": acc,
-            "precision_score": prec,
-            "recall_score": rec,
-            "f1_score": f1,
-            "nll_score": nll,
-            "brier_score": bs,
-            "pred_entropy_score": entropy,
-            "ece_score": ece,
-            }
+    acc = accuracy_score(labels, y_pred)
+    prec = precision_score(labels, y_pred)
+    rec = recall_score(labels, y_pred)
+    f1 = f1_score(labels, y_pred)
+    nll = nll_score(labels, y_prob)
+    bs = brier_score(labels, y_prob)
+    entropy = pred_entropy_score(y_prob)
+    ece = ece_score(labels, y_prob)
+
+    return {
+        "accuracy_score": acc,
+        "precision_score": prec,
+        "recall_score": rec,
+        "f1_score": f1,
+        "nll_score": nll,
+        "brier_score": bs,
+        "pred_entropy_score": entropy,
+        "ece_score": ece,
+    }
 
 
 class AleatoricLossTrainer(TFTrainer):
@@ -119,8 +136,8 @@ def train_model(config: BertConfig, dataset: Dataset, batch_size: int, learning_
         json.dump(eval_results, f)
 
     if mc_dropout_inference:
-        mc_dropout_predictions = mc_dropout_predict(model, tokenized_dataset['val'])
-        mc_dropout_results = compute_metrics_for_mc_dropout(tokenized_dataset['val']['labels'], mc_dropout_predictions)
+        mean_predictions, var_predictions = mc_dropout_predict(model, tokenized_dataset['val'])
+        mc_dropout_results = compute_mc_dropout_metrics(tokenized_dataset['val']['labels'], mean_predictions)
         with open(f"./{dir_prefix}_results_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}/mc_dropout_metrics.json", 'w') as f:
             json.dump(mc_dropout_results, f)
         return mc_dropout_results
@@ -150,17 +167,15 @@ attention_dropout_probs = [0.1, 0.2, 0.3]
 classifier_dropout_probs = [0.1, 0.2, 0.3]
 
 # grid search over dropout probabilities
-best_f1 = 0
-best_dropout = 0
-
 best_dropout_combination = (None, None, None)
+best_f1 = 0
 
 for hidden_dropout in hidden_dropout_probs:
     for attention_dropout in attention_dropout_probs:
         for classifier_dropout in classifier_dropout_probs:
             current_dropout_combination = (hidden_dropout, attention_dropout, classifier_dropout)
             try:
-                logger.info(f"Training model with dropout combination {current_dropout_combination}")
+                logging.info(f"Training model with dropout combination {current_dropout_combination}.")
                 config = create_bert_config(hidden_dropout, attention_dropout, classifier_dropout)
                 eval_results = train_model(config=config,
                                            dataset=dataset,
@@ -171,15 +186,15 @@ for hidden_dropout in hidden_dropout_probs:
                                            mc_dropout_inference=args.mc_dropout_inference,
                                            save_model=False,
                                            training_final_model=False)
-                if args.mc_dropout_inference:
-                    f1 = ...
-                else:
-                    f1 = eval_results['eval_f1_score']
+                f1 = eval_results['eval_f1_score']  # note that eval_results is either eval_results or mc_dropout_results
                 if f1 > best_f1:
                     best_f1 = f1
                     best_dropout_combination = current_dropout_combination
+                    logging.info(f"New best dropout combination: {best_dropout_combination}\n"
+                                f"New best f1 score: {best_f1}")
+                logging.info(f"Finished current iteration.\n")
             except Exception as e:
-                print(f"Error with dropout combination {current_dropout_combination}: {e}")
+                logging.error(f"Error with dropout combination {current_dropout_combination}: {e}.")
 
 # Retrain the best model on the combination of train and validation set
 # Update your dataset to include both training and validation data
@@ -202,7 +217,7 @@ else:
                                training_final_model=True)
 
 if args.cleanup:
-   # remove all dirs that start with "temp"
+    # remove all dirs that start with "temp"
     for directory in os.listdir("."):
         if os.path.isdir(directory) and directory.startswith("temp"):
             shutil.rmtree(directory)

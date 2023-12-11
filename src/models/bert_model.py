@@ -63,8 +63,9 @@ class MCDropoutTFBertForSequenceClassification(TFBertForSequenceClassification):
 
 
 class CustomTFSequenceClassifierOutput(TFSequenceClassifierOutput):
-    def __init__(self, loss=None, logits=None, hidden_states=None, attentions=None, log_variances=None):
-        super().__init__(loss=loss, logits=logits, hidden_states=hidden_states, attentions=attentions)
+    def __init__(self, labels=None, loss=None, logits=None, hidden_states=None, attentions=None, log_variances=None):
+        super().__init__(labels=labels, loss=loss, logits=logits, hidden_states=hidden_states, attentions=attentions)
+        self.labels = labels
         self.log_variances = log_variances
 
 
@@ -103,7 +104,13 @@ class MCDropoutBERTDoubleHead(MCDropoutTFBertForSequenceClassification):
             training,
         )
 
-        pooled_output = outputs[1]
+        if len(outputs) > 1:
+            pooled_output = outputs[1]
+        else:
+            print(type(outputs))
+            print(len(outputs))
+            raise ValueError("Expected pooled output not found in model outputs.")
+
         log_variances = self.log_variance_predictor(pooled_output)
 
         if not return_dict:
@@ -112,13 +119,13 @@ class MCDropoutBERTDoubleHead(MCDropoutTFBertForSequenceClassification):
             return loss, logits, log_variances
 
         return CustomTFSequenceClassifierOutput(
+            labels=labels,
             loss=outputs.loss,
             logits=outputs.logits,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
             log_variances=log_variances,
         )
-
 
 def create_bert_config(hidden_dropout_prob, attention_probs_dropout_prob, classifier_dropout):
     config = BertConfig()
