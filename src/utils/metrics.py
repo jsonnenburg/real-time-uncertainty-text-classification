@@ -31,27 +31,26 @@ def nll_score(y_true, y_prob):
 
 
 def brier_score(y_true, y_prob):
-    return brier_score_loss(y_true, y_prob[:, 1])
+    return brier_score_loss(y_true, y_prob)
 
 
 def pred_entropy_score(y_prob):
     return entropy(y_prob.T)
 
 
-def ece_score(y_true, y_prob, n_bins=10):
-
-    y_pred = tf.argmax(y_prob, axis=-1)
+def ece_score(y_true, y_pred, y_prob, n_bins=10):
     bin_limits = np.linspace(0, 1, n_bins + 1)
     bin_lowers = bin_limits[:-1]
     bin_uppers = bin_limits[1:]
 
     ece = 0.0
     for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
-        in_bin = np.greater_equal(y_prob[:, 1], bin_lower) & np.less(y_prob[:, 1], bin_upper)
+        in_bin = np.greater_equal(y_prob, bin_lower) & np.less(y_prob, bin_upper)
+        in_bin = in_bin.flatten()
         prop_in_bin = np.mean(in_bin)
         if prop_in_bin > 0:
             accuracy_in_bin = np.mean(y_pred[in_bin] == y_true[in_bin])
-            avg_confidence_in_bin = np.mean(y_prob[in_bin, 1])
+            avg_confidence_in_bin = np.mean(y_prob[in_bin])
             ece += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
 
     return ece

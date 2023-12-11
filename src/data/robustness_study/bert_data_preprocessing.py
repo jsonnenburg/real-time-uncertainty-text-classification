@@ -1,10 +1,12 @@
+from typing import Tuple
+
 from transformers import BertTokenizer
-import numpy as np
+import tensorflow as tf
 
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
 
-def bert_preprocess(preprocessed_data, max_length=48):
+def bert_preprocess(preprocessed_data, max_length=48) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
     """
     Preprocesses the data for BERT.
     :param preprocessed_data: The preprocessed data.
@@ -18,12 +20,11 @@ def bert_preprocess(preprocessed_data, max_length=48):
         max_length=max_length,
         padding='max_length',
         truncation=True,
-        return_token_type_ids=False,
-        return_tensors='np'
+        return_token_type_ids=False
     )
 
     input_ids = tokenized_output['input_ids']
     attention_masks = tokenized_output['attention_mask']
-    labels = np.array(labels)
+    labels = tf.constant(labels)
 
     return input_ids, attention_masks, labels

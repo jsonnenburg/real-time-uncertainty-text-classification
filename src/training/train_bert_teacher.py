@@ -68,20 +68,22 @@ def compute_metrics(output):
 
 
 def compute_mc_dropout_metrics(labels, mean_predictions):
-    # TODO: adapt to output similar to compute_metrics
     y_pred = tf.argmax(mean_predictions, axis=-1)
-    # TODO: how to ensure that y_pred class matches with label?
-    # related: what are index 0 and 1 in y_prob?
-    y_prob = tf.nn.sigmoid(mean_predictions)
+    y_prob = tf.nn.sigmoid(mean_predictions)[:, 1:2]  # index 0 and 1 in y_prob correspond to class 0 and 1
+    # y_prob are the probs. of class with label 1
 
-    acc = accuracy_score(labels, y_pred)
-    prec = precision_score(labels, y_pred)
-    rec = recall_score(labels, y_pred)
-    f1 = f1_score(labels, y_pred)
-    nll = nll_score(labels, y_prob)
-    bs = brier_score(labels, y_prob)
-    entropy = pred_entropy_score(y_prob)
-    ece = ece_score(labels, y_prob)
+    labels_np = labels.numpy() if isinstance(labels, tf.Tensor) else labels
+    y_pred_np = y_pred.numpy() if isinstance(y_pred, tf.Tensor) else y_pred
+    y_prob_np = y_prob.numpy().flatten() if isinstance(y_prob, tf.Tensor) else y_prob
+
+    acc = accuracy_score(labels_np, y_pred_np)
+    prec = precision_score(labels_np, y_pred)
+    rec = recall_score(labels_np, y_pred)
+    f1 = f1_score(labels_np, y_pred)
+    nll = nll_score(labels_np, y_prob_np)
+    bs = brier_score(labels_np, y_prob_np)
+    entropy = pred_entropy_score(y_prob_np)
+    ece = ece_score(labels_np, y_pred_np, y_prob_np)
 
     return {
         "accuracy_score": acc,
@@ -145,7 +147,7 @@ def train_model(config: BertConfig, dataset: Dataset, batch_size: int, learning_
     ))
     test_data = test_data.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
-    log_dir = f'./{dir_prefix}_logs_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}'
+    log_dir = f'./{dir_prefix}_logs_hd{int(config.hidden_dropout_prob * 100):03d}_ad{int(config.attention_dropout * 100):03d}_cd{config.classifier_dropout}'
     tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
 
     history_log_file = os.path.join(log_dir, "training_history.txt")
@@ -166,16 +168,16 @@ def train_model(config: BertConfig, dataset: Dataset, batch_size: int, learning_
     labels = eval_data[1] 
 
     eval_metrics = compute_metrics((labels, logits))
-    with open(f"./{dir_prefix}_results_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}/eval_results.json", 'w') as f:
+    with open(f"./{dir_prefix}_results_hd{config.hidden_dropout}_ad{config.attention_dropout}_cd{config.classifier_dropout}/eval_results.json", 'w') as f:
         json.dump(eval_metrics, f)
     
     if save_model:
-        model.save_pretrained(f"./{dir_prefix}_model_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}")
+        model.save_pretrained(f"./{dir_prefix}_model_hd{config.hidden_dropout}_ad{config.attention_dropout}_cd{config.classifier_dropout}")
 
     if mc_dropout_inference:
         mean_predictions, var_predictions = mc_dropout_predict(model, eval_data)
         mc_dropout_metrics = compute_mc_dropout_metrics(labels, mean_predictions)
-        with open(f"./{dir_prefix}_results_hd{hidden_dropout}_ad{attention_dropout}_cd{classifier_dropout}/mc_dropout_metrics.json", 'w') as f:
+        with open(f"./{dir_prefix}_results_hd{config.hidden_dropout}_ad{config.attention_dropout}_cd{config.classifier_dropout}/mc_dropout_metrics.json", 'w') as f:
             json.dump(mc_dropout_metrics, f)
         return mc_dropout_metrics
 
@@ -183,6 +185,7 @@ def train_model(config: BertConfig, dataset: Dataset, batch_size: int, learning_
 
 
 ########################################################################################################################
+    
 
 def main(args):
     data_loader = SimpleDataLoader(dataset_dir=args.input_data_dir)
@@ -205,15 +208,11 @@ def main(args):
                 try:
                     logging.info(f"Training model with dropout combination {current_dropout_combination}.")
                     config = create_bert_config(hidden_dropout, attention_dropout, classifier_dropout)
-                    eval_metrics = train_model(config=config,
-                                               dataset=dataset,
-                                               batch_size=args.batch_size,
-                                               learning_rate=args.learning_rate,
-                                               epochs=args.epochs,
-                                               max_length=args.max_length,
+                    eval_metrics = train_model(config=config, dataset=dataset,
+                                               batch_size=args.batch_size, learning_rate=args.learning_rate,
+                                               epochs=args.epochs, max_length=args.max_length,
                                                custom_loss=aleatoric_loss,
-                                               mc_dropout_inference=args.mc_dropout_inference,
-                                               save_model=False,
+                                               mc_dropout_inference=args.mc_dropout_inference, save_model=False,
                                                training_final_model=False)
                     f1 = eval_metrics['eval_f1_score']  # note that eval_results is either eval_results or mc_dropout_results
                     if f1 > best_f1:
@@ -235,16 +234,9 @@ def main(args):
     else:
         best_config = create_bert_config(best_dropout_combination[0], best_dropout_combination[1], best_dropout_combination[2])
         # train model, save results
-        eval_metrics = train_model(best_config,
-                                   combined_dataset,
-                                   args.batch_size,
-                                   args.learning_rate,
-                                   args.epochs,
-                                   args.max_length,
-                                   custom_loss=aleatoric_loss,
-                                   mc_dropout_inference=True,
-                                   save_model=True,
-                                   training_final_model=True)
+        eval_metrics = train_model(best_config, combined_dataset, args.batch_size, args.learning_rate,
+                                   args.epochs, args.max_length, custom_loss=aleatoric_loss, mc_dropout_inference=True,
+                                   save_model=True, training_final_model=True)
         f1 = eval_metrics['eval_f1_score']
         logging.info(f"Final f1 score of best model configuration: {f1}")
     if args.cleanup:
