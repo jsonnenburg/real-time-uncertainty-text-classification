@@ -89,7 +89,7 @@ def compute_mc_dropout_metrics(labels, mean_predictions):
     }
 
 
-def train_model(config, dataset: Dataset, batch_size: int, learning_rate: float, epochs: int,
+def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, learning_rate: float, epochs: int,
                 max_length: int = 48, custom_loss=aleatoric_loss, mc_dropout_inference: bool = True,
                 save_model: bool = False, training_final_model: bool = False):
     """
@@ -98,6 +98,7 @@ def train_model(config, dataset: Dataset, batch_size: int, learning_rate: float,
 
     :param config:
     :param dataset:
+    :param output_dir:
     :param batch_size:
     :param learning_rate:
     :param epochs:
@@ -109,16 +110,22 @@ def train_model(config, dataset: Dataset, batch_size: int, learning_rate: float,
     :return: eval_metrics
     """
 
-    model = MCDropoutBERT.from_pretrained('bert-base-uncased', config=config, custom_loss_fn=custom_loss)
+    model = MCDropoutBERT.from_pretrained('bert-base-uncased', config=config)
+    model.loss_function = aleatoric_loss
 
-    suffix = f'hd{int(config.hidden_dropout_prob * 100):03d}_ad{int(config.attention_dropout * 100):03d}_cd{int(config.classifier_dropout * 100):03d}'
+    suffix = f'hd{int(config.hidden_dropout_prob * 100):03d}_ad{int(config.attention_probs_dropout_prob * 100):03d}_cd{int(config.classifier_dropout * 100):03d}'
     dir_prefix = 'temp' if not training_final_model else 'final'
 
     def generate_file_path(identifier: str) -> str:
-        return f'./{dir_prefix}_{identifier}_{suffix}'
+        """Generate unique directory for each model and save outputs in subdirectories."""
+        dir_name = os.path.join(output_dir, f'{dir_prefix}_{suffix}')
+        os.makedirs(dir_name, exist_ok=True)
+        subdir_name = os.path.join(dir_name, f'{identifier}')
+        os.makedirs(subdir_name, exist_ok=True)
+        return subdir_name
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    model.compile(optimizer=optimizer, metrics=['accuracy', 'precision', 'recall'])  # use internal model loss (defined above)
+    model.compile(optimizer=optimizer, metrics=[tf.keras.metrics.Accuracy(), tf.keras.metrics.Recall(), tf.keras.metrics.Precision()])  # use internal model loss (defined above)
 
     tokenized_dataset = {
         'train': bert_preprocess(dataset.train, max_length=max_length),
@@ -165,12 +172,18 @@ def train_model(config, dataset: Dataset, batch_size: int, learning_rate: float,
         labels = eval_data[1]
 
     eval_metrics = compute_metrics((labels, logits))
-    os.makedirs(generate_file_path('results'), exist_ok=True)
+    model_config_info = {
+        "hidden_dropout_prob": config.hidden_dropout_prob,
+        "attention_dropout": config.attention_dropout,
+        "classifier_dropout": config.classifier_dropout,
+        "learning_rate": learning_rate,
+        "batch_size": batch_size,
+        "epochs": epochs,
+        "max_length": max_length
+    }
+    eval_metrics["model_config"] = model_config_info
     with open(generate_file_path('results') + '/eval_results.json', 'w') as f:
         json.dump(eval_metrics, f)
-
-    # TODO: maybe rather have one dir per model and save everything in there
-    # TODO: add model info to eval output JSON?
     
     if save_model:
         model.save_pretrained(generate_file_path('model'))
@@ -178,11 +191,54 @@ def train_model(config, dataset: Dataset, batch_size: int, learning_rate: float,
     if mc_dropout_inference:
         mean_predictions, var_predictions = mc_dropout_predict(model, eval_data)
         mc_dropout_metrics = compute_mc_dropout_metrics(labels, mean_predictions)
+        mc_dropout_metrics["model_config"] = model_config_info
         with open(generate_file_path('results') + '/mc_dropout_metrics.json', 'w') as f:
             json.dump(mc_dropout_metrics, f)
         return mc_dropout_metrics
 
     return eval_metrics
+
+
+def run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs, classifier_dropout_probs, args):
+    """
+
+    :param dataset:
+    :param hidden_dropout_probs:
+    :param attention_dropout_probs:
+    :param classifier_dropout_probs:
+    :return: best_f1, best_dropout_combination
+    """
+    best_dropout_combination = (None, None, None)
+    best_f1 = 0
+    updated_best_combination = False
+    for hidden_dropout in hidden_dropout_probs:
+        for attention_dropout in attention_dropout_probs:
+            for classifier_dropout in classifier_dropout_probs:
+                current_dropout_combination = (hidden_dropout, attention_dropout, classifier_dropout)
+                try:
+                    logging.info(f"Training model with dropout combination {current_dropout_combination}.")
+                    config = create_bert_config(hidden_dropout, attention_dropout, classifier_dropout)
+                    logging.info('Created BERT config.')
+                    eval_metrics = train_model(config=config, dataset=dataset, output_dir=args.output_dir,
+                                               batch_size=args.batch_size, learning_rate=args.learning_rate,
+                                               epochs=args.epochs, max_length=args.max_length,
+                                               custom_loss=aleatoric_loss,
+                                               mc_dropout_inference=args.mc_dropout_inference, save_model=False,
+                                               training_final_model=False)
+                    f1 = eval_metrics['eval_f1_score']  # note that eval_results is either eval_results or mc_dropout_results
+                    if f1 > best_f1:
+                        best_f1 = f1
+                        best_dropout_combination = current_dropout_combination
+                        logging.info(f"New best dropout combination: {best_dropout_combination}\n"
+                                    f"New best f1 score: {best_f1}")
+                        updated_best_combination = True
+                    logging.info(f"Finished current iteration.\n")
+                except Exception as e:
+                    logging.error(f"Error with dropout combination {current_dropout_combination}: {e}.")
+                if not updated_best_combination:
+                    best_dropout_combination = current_dropout_combination
+    logging.info(f'Finished grid-search, best f1 score found at {best_f1} for combination {best_dropout_combination}.')
+    return best_f1, best_dropout_combination
 
 
 ########################################################################################################################
@@ -198,32 +254,7 @@ def main(args):
     attention_dropout_probs = [0.1, 0.2, 0.3]
     classifier_dropout_probs = [0.1, 0.2, 0.3]
 
-    # grid search over dropout probabilities
-    best_dropout_combination = (None, None, None)
-    best_f1 = 0
-
-    for hidden_dropout in hidden_dropout_probs:
-        for attention_dropout in attention_dropout_probs:
-            for classifier_dropout in classifier_dropout_probs:
-                current_dropout_combination = (hidden_dropout, attention_dropout, classifier_dropout)
-                try:
-                    logging.info(f"Training model with dropout combination {current_dropout_combination}.")
-                    config = create_bert_config(hidden_dropout, attention_dropout, classifier_dropout)
-                    eval_metrics = train_model(config=config, dataset=dataset,
-                                               batch_size=args.batch_size, learning_rate=args.learning_rate,
-                                               epochs=args.epochs, max_length=args.max_length,
-                                               custom_loss=aleatoric_loss,
-                                               mc_dropout_inference=args.mc_dropout_inference, save_model=False,
-                                               training_final_model=False)
-                    f1 = eval_metrics['eval_f1_score']  # note that eval_results is either eval_results or mc_dropout_results
-                    if f1 > best_f1:
-                        best_f1 = f1
-                        best_dropout_combination = current_dropout_combination
-                        logging.info(f"New best dropout combination: {best_dropout_combination}\n"
-                                    f"New best f1 score: {best_f1}")
-                    logging.info(f"Finished current iteration.\n")
-                except Exception as e:
-                    logging.error(f"Error with dropout combination {current_dropout_combination}: {e}.")
+    best_f1, best_dropout_combination = run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs, classifier_dropout_probs, args)
 
     # Retrain the best model on the combination of train and validation set
     # Update your dataset to include both training and validation data
@@ -235,7 +266,7 @@ def main(args):
     else:
         best_config = create_bert_config(best_dropout_combination[0], best_dropout_combination[1], best_dropout_combination[2])
         # train model, save results
-        eval_metrics = train_model(best_config, combined_dataset, args.batch_size, args.learning_rate,
+        eval_metrics = train_model(best_config, combined_dataset, args.output_dir, args.batch_size, args.learning_rate,
                                    args.epochs, args.max_length, custom_loss=aleatoric_loss, mc_dropout_inference=True,
                                    save_model=True, training_final_model=True)
         f1 = eval_metrics['eval_f1_score']
