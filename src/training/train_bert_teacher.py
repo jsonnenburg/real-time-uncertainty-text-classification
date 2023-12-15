@@ -15,7 +15,7 @@ from src.data.robustness_study.bert_data_preprocessing import bert_preprocess, g
 from src.utils.inference import mc_dropout_predict
 from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, nll_score, brier_score,
                                pred_entropy_score, ece_score)
-from src.utils.loss_functions import aleatoric_loss
+from src.utils.loss_functions import aleatoric_loss, null_loss
 from src.utils.data import SimpleDataLoader, Dataset
 from src.utils.training import HistorySaver
 
@@ -110,7 +110,7 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
     :return: eval_metrics
     """
 
-    model = AleatoricMCDropoutBERT(config=config)
+    model = AleatoricMCDropoutBERT(config=config, custom_loss_fn=aleatoric_loss)
 
     suffix = f'hd{int(config.hidden_dropout_prob * 100):03d}_ad{int(config.attention_probs_dropout_prob * 100):03d}_cd{int(config.classifier_dropout * 100):03d}'
     dir_prefix = 'temp' if not training_final_model else 'final'
@@ -126,8 +126,9 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     model.compile(
         optimizer=optimizer,
-        loss=aleatoric_loss,
-        metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
+        loss={'classifier': aleatoric_loss, 'log_variance': null_loss},
+        metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
+        run_eagerly=True
     )  # use internal model loss (defined above)
 
     # TODO: move data stuff outside of training method -> want to do this only once in grid-search loop
@@ -175,7 +176,8 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
         logits = predictions.logits
         labels = eval_data[1]
 
-    eval_metrics = compute_metrics((labels, logits))
+    eval_metrics = compute_metrics((labels, logits))  # TODO: error occurs here because we compute metrics on batch
+    # TODO: maybe internally (in compute_metrics), process all batches and then return final eval metrics, otherwise this is wrong)
     model_config_info = {
         "hidden_dropout_prob": config.hidden_dropout_prob,
         "attention_dropout": config.attention_dropout,

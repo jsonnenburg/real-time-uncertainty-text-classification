@@ -1,4 +1,10 @@
+import logging
+
 import tensorflow as tf
+
+
+def null_loss(y_true, y_pred):
+    return tf.zeros_like(y_true)
 
 
 def aleatoric_loss(y_true, y_pred):
@@ -8,10 +14,18 @@ def aleatoric_loss(y_true, y_pred):
     """
     # y_pred is assumed to contain both logits and log variance, concatenated
     # The first half of the dimensions are the logits, the second half the log variances
-    logits, log_variances = y_pred.logits, y_pred.log_variances
+    bce = tf.losses.BinaryCrossentropy(from_logits=True)
+
+    try:
+        logits, log_variances = y_pred['logits'], y_pred['log_variances']
+    except TypeError:
+        return tf.convert_to_tensor(bce(y_true, y_pred.numpy().reshape(y_true.shape)).numpy())
+
+    # TODO: if y_pred is ,1: return cross_entropy_loss
 
     # Standard cross-entropy loss between logits and true labels
-    cross_entropy_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y_true, logits=logits)
+    logits_np = logits.numpy().flatten()
+    cross_entropy_loss = tf.convert_to_tensor(bce(y_true, logits_np))
 
     # Adjust cross-entropy loss by the predicted variance (aleatoric uncertainty)
     precision = tf.exp(-log_variances)
@@ -41,12 +55,14 @@ def shen_loss(y_true, y_pred, weight=1):
 
     y_true = Tuple(actual ground truth, teacher predictive sample)
     """
+    # TODO: update to use y_pred dict and and proper tf-compliant losses (see aleatoric loss)
+
     assert y_true.shape[1] == 2 and y_pred.shape[1] == 2
 
     y_true, y_teacher_pred_mean = y_true[:, 0], y_true[:, 1]
     # unpack the predictions, this assumes that the predictions are a vector of size 2
     y_student_pred_mean, y_student_pred_log_variance = y_pred[:, 0], y_pred[:, 1]
-    Lt = aleatoric_loss(y_true, y_student_pred_mean, y_student_pred_log_variance)
+    Lt = aleatoric_loss(y_true, y_pred)
     Ls = gaussian_mle_loss(y_teacher_pred_mean, y_student_pred_mean, y_student_pred_log_variance)
     Ltotal = Ls + weight * Lt
 

@@ -10,13 +10,12 @@ import tensorflow as tf
 from transformers.modeling_tf_outputs import TFSequenceClassifierOutput
 from transformers.modeling_tf_utils import get_initializer, TFModelInputType
 
-from src.utils.loss_functions import aleatoric_loss
-
 
 class CustomTFSequenceClassifierOutput(TFSequenceClassifierOutput):
-    def __init__(self, labels=None, loss=None, logits=None, hidden_states=None, attentions=None, log_variances=None):
+    def __init__(self, labels=None, loss=None, logits=None, probs=None, hidden_states=None, attentions=None, log_variances=None):
         super().__init__(loss=loss, logits=logits, hidden_states=hidden_states, attentions=attentions)
         self.labels = labels
+        self.probs = probs
         self.log_variances = log_variances
 
 
@@ -159,6 +158,7 @@ class ArchivedAleatoricMCDropoutBERT(TFAutoModelForSequenceClassification, TFPre
             attentions=outputs.attentions
         )
 
+    """ 
     def train_step(self, data):
         x, y = data
 
@@ -173,24 +173,32 @@ class ArchivedAleatoricMCDropoutBERT(TFAutoModelForSequenceClassification, TFPre
             metric.update_state(y, y_pred.logits)
 
         return {m.name: m.result() for m in self.metrics}
+    """
 
 
 class AleatoricMCDropoutBERT(tf.keras.Model):
-    def __init__(self, config):
+    def __init__(self, config, custom_loss_fn=None):
         super(AleatoricMCDropoutBERT, self).__init__()
         self.bert = TFBertModel.from_pretrained('bert-base-uncased', config=config)
 
         self.classifier = tf.keras.layers.Dense(
             units=1,  # For binary classification
             kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=config.initializer_range),
-            name="classifier"
+            name="classifier",
+            trainable=True
         )
         self.log_variance_predictor = tf.keras.layers.Dense(
             units=1,
             kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=config.initializer_range),
-            name="log_variance"
+            name="log_variance",
+            trainable=True
         )
         self.dropout = tf.keras.layers.Dropout(rate=config.hidden_dropout_prob)
+
+        if custom_loss_fn:
+            self.custom_loss_fn = custom_loss_fn
+        else:
+            self.custom_loss_fn = tf.keras.losses.tf.nn.BinaryCrossEntropy()
 
     def call(self, inputs, training=False):
         bert_outputs = self.bert(inputs, training=training)
@@ -198,14 +206,34 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
         pooled_output = self.dropout(pooled_output, training=training)
 
         logits = self.classifier(pooled_output)
+        probs = tf.nn.sigmoid(logits)
         log_variances = self.log_variance_predictor(pooled_output)
 
         return CustomTFSequenceClassifierOutput(
             logits=logits,
+            probs=probs,
             log_variances=log_variances,
             hidden_states=bert_outputs.hidden_states,
             attentions=bert_outputs.attentions
         )
+
+    def train_step(self, data):
+        x, y = data
+
+        with tf.GradientTape() as tape:
+            y_pred = self.call(x, training=True)
+            if not isinstance(y_pred, CustomTFSequenceClassifierOutput):
+                raise TypeError("The output of the model is not CustomTFSequenceClassifierOutput.")
+            if self.custom_loss_fn is not None:
+                loss = self.custom_loss_fn(y, {'logits': y_pred.logits, 'log_variances': y_pred.log_variances})
+            else:
+                raise ValueError("No custom loss function provided!")
+
+        gradients = tape.gradient(loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        self.compiled_metrics.update_state(y, y_pred.probs)
+
+        return {m.name: m.result() for m in self.metrics}
 
 
 def create_bert_config(hidden_dropout_prob, attention_probs_dropout_prob, classifier_dropout):
