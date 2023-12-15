@@ -9,7 +9,7 @@ from keras.callbacks import TensorBoard
 
 import logging
 
-from src.models.bert_model import create_bert_config, MCDropoutBERT, CustomTFSequenceClassifierOutput
+from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT, CustomTFSequenceClassifierOutput
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess, get_tf_dataset
 
 from src.utils.inference import mc_dropout_predict
@@ -110,8 +110,7 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
     :return: eval_metrics
     """
 
-    model = MCDropoutBERT.from_pretrained('bert-base-uncased', config=config)
-    model.loss_function = aleatoric_loss
+    model = AleatoricMCDropoutBERT(config=config)
 
     suffix = f'hd{int(config.hidden_dropout_prob * 100):03d}_ad{int(config.attention_probs_dropout_prob * 100):03d}_cd{int(config.classifier_dropout * 100):03d}'
     dir_prefix = 'temp' if not training_final_model else 'final'
@@ -125,8 +124,13 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
         return subdir_name
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    model.compile(optimizer=optimizer, metrics=[tf.keras.metrics.Accuracy(), tf.keras.metrics.Recall(), tf.keras.metrics.Precision()])  # use internal model loss (defined above)
+    model.compile(
+        optimizer=optimizer,
+        loss=aleatoric_loss,
+        metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
+    )  # use internal model loss (defined above)
 
+    # TODO: move data stuff outside of training method -> want to do this only once in grid-search loop
     tokenized_dataset = {
         'train': bert_preprocess(dataset.train, max_length=max_length),
         'val': bert_preprocess(dataset.val, max_length=max_length) if dataset.val is not None else None,
@@ -222,7 +226,6 @@ def run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs,
                     eval_metrics = train_model(config=config, dataset=dataset, output_dir=args.output_dir,
                                                batch_size=args.batch_size, learning_rate=args.learning_rate,
                                                epochs=args.epochs, max_length=args.max_length,
-                                               custom_loss=aleatoric_loss,
                                                mc_dropout_inference=args.mc_dropout_inference, save_model=False,
                                                training_final_model=False)
                     f1 = eval_metrics['eval_f1_score']  # note that eval_results is either eval_results or mc_dropout_results

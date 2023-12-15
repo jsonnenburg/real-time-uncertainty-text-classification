@@ -1,15 +1,14 @@
 import tensorflow as tf
 
 
-def aleatoric_loss(y_true, y_pred_logits, y_pred_log_variance):
+def aleatoric_loss(y_true, y_pred):
     """
     Aleatoric uncertainty loss function from Kendall & Gal (2017) for fine-tuning the teacher model.
     Does not require ground truth variance.
     """
     # y_pred is assumed to contain both logits and log variance, concatenated
     # The first half of the dimensions are the logits, the second half the log variances
-    logits = y_pred_logits
-    log_variances = y_pred_log_variance
+    logits, log_variances = y_pred.logits, y_pred.log_variances
 
     # Standard cross-entropy loss between logits and true labels
     cross_entropy_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y_true, logits=logits)
