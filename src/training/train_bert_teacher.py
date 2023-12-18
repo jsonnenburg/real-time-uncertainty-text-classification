@@ -9,7 +9,7 @@ from keras.callbacks import TensorBoard
 
 import logging
 
-from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT, CustomTFSequenceClassifierOutput
+from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess, get_tf_dataset
 
 from src.utils.inference import mc_dropout_predict
@@ -20,24 +20,37 @@ from src.utils.data import SimpleDataLoader, Dataset
 from src.utils.training import HistorySaver
 
 
-def compute_metrics(output):
-    logits = None
-    labels = None
-    if isinstance(output, CustomTFSequenceClassifierOutput):
-        logits = output.logits
-        labels = output.labels
-    elif isinstance(output, tuple):
-        logits = output[1]
-        labels = output[0]
+def serialize_metric(value):
+    if np.isscalar(value):
+        if np.isnan(value):
+            return 'NaN'
+        elif isinstance(value, np.ndarray) or isinstance(value, tf.Tensor):
+            return value.item()
+        elif type(value) is np.float32:
+            return value.item()
+        else:
+            return value
 
-    if logits is not None and labels is not None:
-        class_predictions = logits.argmax(-1)
-        prob_predictions = tf.nn.softmax(logits, axis=-1)
-        labels_np = labels.numpy() if isinstance(labels, tf.Tensor) else labels
-        class_predictions_np = class_predictions.numpy() if isinstance(class_predictions,
-                                                                       tf.Tensor) else class_predictions
-        prob_predictions_np = prob_predictions.numpy() if isinstance(prob_predictions, tf.Tensor) else prob_predictions
-        
+
+def compute_metrics(model, eval_data):
+    total_logits = []
+    total_labels = []
+
+    # iterate over all batches in eval_data
+    for batch in eval_data:
+        features, labels = batch
+        predictions = model.predict(features)
+        total_logits.extend(predictions.logits)
+        total_labels.extend(labels.numpy())
+
+    all_logits = np.array(total_logits)
+    all_labels = np.array(total_labels)
+
+    if total_logits is not None and total_labels is not None:
+        prob_predictions_np = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
+        class_predictions_np = prob_predictions_np.round(0).astype(int)
+        labels_np = all_labels
+
         acc = accuracy_score(labels_np, class_predictions_np)
         prec = precision_score(labels_np, class_predictions_np)
         rec = recall_score(labels_np, class_predictions_np)
@@ -47,16 +60,15 @@ def compute_metrics(output):
         avg_entropy = np.mean(pred_entropy_score(prob_predictions_np))
         ece = ece_score(labels_np, class_predictions_np, prob_predictions_np)
         return {
-            "accuracy_score": acc.item() if np.isscalar(acc) else acc.tolist(),
-            "precision_score": prec.item() if np.isscalar(prec) else prec.tolist(),
-            "recall_score": rec.item() if np.isscalar(rec) else rec.tolist(),
-            "f1_score": f1.item() if np.isscalar(f1) else f1.tolist(),
-            "nll_score": nll.item() if np.isscalar(nll) else nll.tolist(),
-            "brier_score": bs.item() if np.isscalar(bs) else bs.tolist(),
-            "avg_pred_entropy_score": avg_entropy.item() if np.isscalar(avg_entropy) else avg_entropy.tolist(),
-            "ece_score": ece.item() if np.isscalar(ece) else ece.tolist(),
+            "accuracy_score": serialize_metric(acc),
+            "precision_score": serialize_metric(prec),
+            "recall_score": serialize_metric(rec),
+            "f1_score": serialize_metric(f1),
+            "nll_score": serialize_metric(nll),
+            "brier_score": serialize_metric(bs),
+            "avg_pred_entropy_score": serialize_metric(avg_entropy),
+            "ece_score": serialize_metric(ece)
         }
-
 
 
 def compute_mc_dropout_metrics(labels, mean_predictions):
@@ -90,8 +102,8 @@ def compute_mc_dropout_metrics(labels, mean_predictions):
 
 
 def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, learning_rate: float, epochs: int,
-                max_length: int = 48, custom_loss=aleatoric_loss, mc_dropout_inference: bool = True,
-                save_model: bool = False, training_final_model: bool = False):
+                max_length: int = 48, mc_dropout_inference: bool = True, save_model: bool = False,
+                training_final_model: bool = False):
     """
     Trains a teacher BERT model and records the validation set performance, either for one stochastic forward pass or
     for M stochastic forward passes, with dropout enabled (MC dropout).
@@ -103,7 +115,6 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
     :param learning_rate:
     :param epochs:
     :param max_length:
-    :param custom_loss:
     :param mc_dropout_inference:
     :param save_model:
     :param training_final_model:
@@ -139,15 +150,15 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
     }
 
     train_data = get_tf_dataset(tokenized_dataset, 'train')
-    train_data = train_data.shuffle(buffer_size=1024).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    train_data = train_data.shuffle(buffer_size=1024).batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
     # handle case where we group train and val together (best model config) and fine-tune on both
     if tokenized_dataset['val'] is not None:
         val_data = get_tf_dataset(tokenized_dataset, 'val')
-        val_data = val_data.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+        val_data = val_data.batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
     else:
         val_data = None
     test_data = get_tf_dataset(tokenized_dataset, 'test')
-    test_data = test_data.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    test_data = test_data.batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
 
     log_dir = generate_file_path('logs')
     tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
@@ -164,23 +175,14 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
     
     eval_data = val_data if val_data is not None else test_data
 
-    predictions = model.predict(eval_data)
-
-    logits = predictions.logits
-    labels = None
     if isinstance(eval_data, tf.data.Dataset):
-        for batch in eval_data.take(1):
-            _, labels = batch  # Assuming the dataset yields (features, labels)
-            break
+        eval_metrics = compute_metrics(model, eval_data)
     else:
-        logits = predictions.logits
-        labels = eval_data[1]
+        raise "Eval data is not in TensorFlow-conforming dataset format."
 
-    eval_metrics = compute_metrics((labels, logits))  # TODO: error occurs here because we compute metrics on batch
-    # TODO: maybe internally (in compute_metrics), process all batches and then return final eval metrics, otherwise this is wrong)
     model_config_info = {
         "hidden_dropout_prob": config.hidden_dropout_prob,
-        "attention_dropout": config.attention_dropout,
+        "attention_probs_dropout_prob": config.attention_probs_dropout_prob,
         "classifier_dropout": config.classifier_dropout,
         "learning_rate": learning_rate,
         "batch_size": batch_size,
@@ -250,6 +252,7 @@ def run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs,
     
 
 def main(args):
+
     data_loader = SimpleDataLoader(dataset_dir=args.input_data_dir)
     data_loader.load_dataset()
     dataset = data_loader.get_dataset()
@@ -272,7 +275,7 @@ def main(args):
         best_config = create_bert_config(best_dropout_combination[0], best_dropout_combination[1], best_dropout_combination[2])
         # train model, save results
         eval_metrics = train_model(best_config, combined_dataset, args.output_dir, args.batch_size, args.learning_rate,
-                                   args.epochs, args.max_length, custom_loss=aleatoric_loss, mc_dropout_inference=True,
+                                   args.epochs, args.max_length, mc_dropout_inference=True,
                                    save_model=True, training_final_model=True)
         f1 = eval_metrics['eval_f1_score']
         logging.info(f"Final f1 score of best model configuration: {f1}")

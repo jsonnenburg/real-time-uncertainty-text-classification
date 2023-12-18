@@ -39,7 +39,7 @@ class CustomMCDropoutBERT(TFBertForSequenceClassification):
         if custom_loss_fn:
             self.custom_loss_fn = custom_loss_fn
         else:
-            self.custom_loss_fn = tf.keras.losses.tf.nn.sparse_softmax_cross_entropy_with_logits()
+            self.custom_loss_fn = tf.keras.losses.SparseCategoricalCrossentropy()
 
     def call(
             self,
@@ -198,9 +198,9 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
         if custom_loss_fn:
             self.custom_loss_fn = custom_loss_fn
         else:
-            self.custom_loss_fn = tf.keras.losses.tf.nn.BinaryCrossEntropy()
+            self.custom_loss_fn = tf.keras.losses.BinaryCrossentropy()
 
-    def call(self, inputs, training=False):
+    def call(self, inputs, training=False, mask=None):
         bert_outputs = self.bert(inputs, training=training)
         pooled_output = bert_outputs.pooler_output
         pooled_output = self.dropout(pooled_output, training=training)

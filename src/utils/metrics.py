@@ -6,25 +6,33 @@ from scipy.stats import entropy
 # y_prob: need probabilities for positive class
 
 
+def safe_divide(numerator, denominator):
+    if denominator == 0:
+        return 0 if numerator == 0 else np.nan
+    else:
+        return numerator / denominator
+
+
 def accuracy_score(y_true, y_pred):
     return np.mean(y_true == y_pred)
 
 
 def precision_score(y_true, y_pred):
-    y_true = np.squeeze(y_true)
-    return np.mean(y_true[y_pred == 1] == y_pred[y_pred == 1])
+    true_positives = np.sum((y_true == 1) & (y_pred == 1))
+    predicted_positives = np.sum(y_pred == 1)
+    return safe_divide(true_positives, predicted_positives)
 
 
 def recall_score(y_true, y_pred):
-    y_true = np.squeeze(y_true)
-    return np.mean(y_true[y_true == 1] == y_pred[y_true == 1])
+    true_positives = np.sum((y_true == 1) & (y_pred == 1))
+    actual_positives = np.sum(y_true == 1)
+    return safe_divide(true_positives, actual_positives)
 
 
 def f1_score(y_true, y_pred):
-    y_true = np.squeeze(y_true)
     precision = precision_score(y_true, y_pred)
     recall = recall_score(y_true, y_pred)
-    return 2 * (precision * recall) / (precision + recall)
+    return safe_divide(2 * precision * recall, precision + recall)
 
 
 def nll_score(y_true, y_prob):
