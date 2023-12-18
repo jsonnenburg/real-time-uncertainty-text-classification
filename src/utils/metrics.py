@@ -46,7 +46,8 @@ def brier_score(y_true, y_prob):
 
 
 def pred_entropy_score(y_prob):
-    return entropy(y_prob.T)
+    p = np.array([1 - y_prob, y_prob])
+    return -np.mean(p * np.log2(p + 1e-9))
 
 
 def ece_score(y_true, y_pred, y_prob, n_bins=10):

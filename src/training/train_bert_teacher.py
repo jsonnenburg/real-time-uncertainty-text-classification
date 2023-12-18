@@ -1,13 +1,19 @@
 import argparse
 import json
+import logging
 import os
 import shutil
 
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 from keras.callbacks import TensorBoard
 
-import logging
+from logger_config import setup_logging
+
+setup_logging()
+
+logger = logging.getLogger(__name__)
 
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess, get_tf_dataset
@@ -39,11 +45,10 @@ def compute_metrics(model, eval_data):
     # iterate over all batches in eval_data
     for batch in eval_data:
         features, labels = batch
-        predictions = model.predict(features)
+        predictions = model(features, training=False)
         total_logits.extend(predictions.logits)
         total_labels.extend(labels.numpy())
 
-    all_logits = np.array(total_logits)
     all_labels = np.array(total_labels)
 
     if total_logits is not None and total_labels is not None:
@@ -57,8 +62,52 @@ def compute_metrics(model, eval_data):
         f1 = f1_score(labels_np, class_predictions_np)
         nll = nll_score(labels_np, prob_predictions_np)
         bs = brier_score(labels_np, prob_predictions_np)
-        avg_entropy = np.mean(pred_entropy_score(prob_predictions_np))
+        # avg_entropy = np.mean(pred_entropy_score(prob_predictions_np))
         ece = ece_score(labels_np, class_predictions_np, prob_predictions_np)
+        return {
+            "accuracy_score": serialize_metric(acc),
+            "precision_score": serialize_metric(prec),
+            "recall_score": serialize_metric(rec),
+            "f1_score": serialize_metric(f1),
+            "nll_score": serialize_metric(nll),
+            "brier_score": serialize_metric(bs),
+            # "avg_pred_entropy_score": serialize_metric(avg_entropy),
+            "ece_score": serialize_metric(ece)
+        }
+    else:
+        raise "Metrics could not be computed successfully."
+
+
+def compute_mc_dropout_metrics(model, eval_data, n=20):
+    total_logits = []
+    total_mean_logits = []
+    total_variances = []
+    total_labels = []
+
+    for batch in eval_data:
+        features, labels = batch
+        logits, mean_predictions, var_predictions = mc_dropout_predict(model, features, n=n)
+        total_logits.append(logits.numpy())
+        total_mean_logits.extend(mean_predictions.numpy())
+        total_variances.extend(var_predictions.numpy())
+        total_labels.extend(labels.numpy())
+
+    total_logits = np.concatenate(total_logits, axis=1)  # concatenate along the batch dimension
+
+    if total_mean_logits and total_labels:
+        all_labels = np.array(total_labels)
+        mean_prob_predictions_np = tf.nn.sigmoid(total_mean_logits).numpy().reshape(all_labels.shape)
+        mean_class_predictions_np = mean_prob_predictions_np.round(0).astype(int)
+        labels_np = all_labels
+
+        acc = accuracy_score(labels_np, mean_class_predictions_np)
+        prec = precision_score(labels_np, mean_class_predictions_np)
+        rec = recall_score(labels_np, mean_class_predictions_np)
+        f1 = f1_score(labels_np, mean_class_predictions_np)
+        nll = nll_score(labels_np, mean_prob_predictions_np)
+        bs = brier_score(labels_np, mean_prob_predictions_np)
+        avg_entropy = np.mean([pred_entropy_score( tf.nn.sigmoid(total_logits[:, i, :].squeeze())) for i in range(total_logits.shape[1])])
+        ece = ece_score(labels_np, mean_class_predictions_np, mean_prob_predictions_np)
         return {
             "accuracy_score": serialize_metric(acc),
             "precision_score": serialize_metric(prec),
@@ -69,36 +118,8 @@ def compute_metrics(model, eval_data):
             "avg_pred_entropy_score": serialize_metric(avg_entropy),
             "ece_score": serialize_metric(ece)
         }
-
-
-def compute_mc_dropout_metrics(labels, mean_predictions):
-    y_pred = tf.argmax(mean_predictions, axis=-1)
-    y_prob = tf.nn.sigmoid(mean_predictions)[:, 1:2]  # index 0 and 1 in y_prob correspond to class 0 and 1
-    # y_prob are the probs. of class with label 1
-
-    labels_np = labels.numpy() if isinstance(labels, tf.Tensor) else labels
-    y_pred_np = y_pred.numpy() if isinstance(y_pred, tf.Tensor) else y_pred
-    y_prob_np = y_prob.numpy().flatten() if isinstance(y_prob, tf.Tensor) else y_prob
-
-    acc = accuracy_score(labels_np, y_pred_np)
-    prec = precision_score(labels_np, y_pred_np)
-    rec = recall_score(labels_np, y_pred_np)
-    f1 = f1_score(labels_np, y_pred_np)
-    nll = nll_score(labels_np, y_prob_np)
-    bs = brier_score(labels_np, y_prob_np)
-    entropy = pred_entropy_score(y_prob_np)
-    ece = ece_score(labels_np, y_pred_np, y_prob_np)
-
-    return {
-        "accuracy_score": acc,
-        "precision_score": prec,
-        "recall_score": rec,
-        "f1_score": f1,
-        "nll_score": nll,
-        "brier_score": bs,
-        "pred_entropy_score": entropy,
-        "ece_score": ece,
-    }
+    else:
+        raise "MC dropout metrics could not be computed successfully."
 
 
 def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, learning_rate: float, epochs: int,
@@ -140,7 +161,7 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
         loss={'classifier': aleatoric_loss, 'log_variance': null_loss},
         metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
         run_eagerly=True
-    )  # use internal model loss (defined above)
+    )
 
     # TODO: move data stuff outside of training method -> want to do this only once in grid-search loop
     tokenized_dataset = {
@@ -161,6 +182,7 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
     test_data = test_data.batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
 
     log_dir = generate_file_path('logs')
+    # TODO: individual output subdir for each run
     tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
 
     history_log_file = os.path.join(log_dir, "training_history.txt")
@@ -190,15 +212,14 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
         "max_length": max_length
     }
     eval_metrics["model_config"] = model_config_info
-    with open(generate_file_path('results') + '/eval_results.json', 'w') as f:
+    with open(os.path.join(generate_file_path('results'), 'eval_results.json'), 'w') as f:
         json.dump(eval_metrics, f)
-    
+
     if save_model:
-        model.save_pretrained(generate_file_path('model'))
+        model.save_weights(os.path.join(generate_file_path('model'), 'model.h5'), save_format='h5')
 
     if mc_dropout_inference:
-        mean_predictions, var_predictions = mc_dropout_predict(model, eval_data)
-        mc_dropout_metrics = compute_mc_dropout_metrics(labels, mean_predictions)
+        mc_dropout_metrics = compute_mc_dropout_metrics(model, eval_data)
         mc_dropout_metrics["model_config"] = model_config_info
         with open(generate_file_path('results') + '/mc_dropout_metrics.json', 'w') as f:
             json.dump(mc_dropout_metrics, f)
@@ -224,27 +245,27 @@ def run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs,
             for classifier_dropout in classifier_dropout_probs:
                 current_dropout_combination = (hidden_dropout, attention_dropout, classifier_dropout)
                 try:
-                    logging.info(f"Training model with dropout combination {current_dropout_combination}.")
+                    logger.info(f"Training model with dropout combination {current_dropout_combination}.")
                     config = create_bert_config(hidden_dropout, attention_dropout, classifier_dropout)
-                    logging.info('Created BERT config.')
+                    logger.info('Created BERT config.')
                     eval_metrics = train_model(config=config, dataset=dataset, output_dir=args.output_dir,
                                                batch_size=args.batch_size, learning_rate=args.learning_rate,
                                                epochs=args.epochs, max_length=args.max_length,
                                                mc_dropout_inference=args.mc_dropout_inference, save_model=False,
                                                training_final_model=False)
-                    f1 = eval_metrics['eval_f1_score']  # note that eval_results is either eval_results or mc_dropout_results
+                    f1 = eval_metrics['f1_score']  # note that eval_results is either eval_results or mc_dropout_results
                     if f1 > best_f1:
                         best_f1 = f1
                         best_dropout_combination = current_dropout_combination
-                        logging.info(f"New best dropout combination: {best_dropout_combination}\n"
+                        logger.info(f"New best dropout combination: {best_dropout_combination}\n"
                                     f"New best f1 score: {best_f1}")
                         updated_best_combination = True
-                    logging.info(f"Finished current iteration.\n")
+                    logger.info(f"Finished current iteration.\n")
                 except Exception as e:
-                    logging.error(f"Error with dropout combination {current_dropout_combination}: {e}.")
+                    logger.error(f"Error with dropout combination {current_dropout_combination}: {e}.")
                 if not updated_best_combination:
                     best_dropout_combination = current_dropout_combination
-    logging.info(f'Finished grid-search, best f1 score found at {best_f1} for combination {best_dropout_combination}.')
+    logger.info(f'Finished grid-search, best f1 score found at {best_f1} for combination {best_dropout_combination}.')
     return best_f1, best_dropout_combination
 
 
@@ -266,19 +287,19 @@ def main(args):
 
     # Retrain the best model on the combination of train and validation set
     # Update your dataset to include both training and validation data
-    combined_training = dataset.train + dataset.val
+    combined_training = pd.concat([dataset.train, dataset.val])
     combined_dataset = Dataset(train=combined_training, test=dataset.test)
 
     if best_dropout_combination is None:
         raise ValueError("No best dropout combination saved.")
     else:
         best_config = create_bert_config(best_dropout_combination[0], best_dropout_combination[1], best_dropout_combination[2])
-        # train model, save results
-        eval_metrics = train_model(best_config, combined_dataset, args.output_dir, args.batch_size, args.learning_rate,
-                                   args.epochs, args.max_length, mc_dropout_inference=True,
+        eval_metrics = train_model(config=best_config, dataset=combined_dataset, output_dir=args.output_dir,
+                                   batch_size=args.batch_size, learning_rate=args.learning_rate, epochs=args.epochs,
+                                   max_length=args.max_length, mc_dropout_inference=args.mc_dropout_inference,
                                    save_model=True, training_final_model=True)
-        f1 = eval_metrics['eval_f1_score']
-        logging.info(f"Final f1 score of best model configuration: {f1}")
+        f1 = eval_metrics['f1_score']
+        logger.info(f"Final f1 score of best model configuration: {f1}")
     if args.cleanup:
         for directory in os.listdir("."):
             if os.path.isdir(directory) and directory.startswith("temp"):
@@ -292,10 +313,11 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--max_length", type=int, default=48)
-    parser.add_argument("--mc_dropout_inference", type=bool, default=True)
-    parser.add_argument("--output_dir", type=str, default="out")
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--cleanup", type=bool, default=False)
+    parser.add_argument( '-mcd', '--mc_dropout_inference', action='store_true', help='Enable MC dropout inference.')
+    parser.add_argument('--output_dir', type=str, default="out")
+    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--cleanup', type=bool, default=False, help='Remove all subdirectories with temp prefix from output dir.')
     args = parser.parse_args()
+
 
     main(args)

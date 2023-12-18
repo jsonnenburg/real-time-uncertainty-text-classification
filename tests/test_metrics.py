@@ -91,7 +91,7 @@ class TestMetrics(unittest.TestCase):
 
     def test_pred_entropy_score(self):
         entropy = pred_entropy_score(self.y_prob)
-        self.assertTrue((entropy >= 0).all())
+        self.assertTrue((entropy >= 0).all() and (entropy <= 1).all())
 
     def test_ece_score(self):
         ece = ece_score(self.y_true, self.y_pred, self.y_prob[:, 1])

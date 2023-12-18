@@ -179,10 +179,15 @@ class ArchivedAleatoricMCDropoutBERT(TFAutoModelForSequenceClassification, TFPre
 class AleatoricMCDropoutBERT(tf.keras.Model):
     def __init__(self, config, custom_loss_fn=None):
         super(AleatoricMCDropoutBERT, self).__init__()
-        self.bert = TFBertModel.from_pretrained('bert-base-uncased', config=config)
-
+        self.bert = TFBertModel.from_pretrained(
+            'bert-base-uncased',
+            config=config
+        )
+        self.dropout = tf.keras.layers.Dropout(
+            rate=config.classifier_dropout
+        )
         self.classifier = tf.keras.layers.Dense(
-            units=1,  # For binary classification
+            units=1,
             kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=config.initializer_range),
             name="classifier",
             trainable=True
@@ -193,7 +198,6 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
             name="log_variance",
             trainable=True
         )
-        self.dropout = tf.keras.layers.Dropout(rate=config.hidden_dropout_prob)
 
         if custom_loss_fn:
             self.custom_loss_fn = custom_loss_fn
@@ -203,7 +207,7 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
     def call(self, inputs, training=False, mask=None):
         bert_outputs = self.bert(inputs, training=training)
         pooled_output = bert_outputs.pooler_output
-        pooled_output = self.dropout(pooled_output, training=training)
+        pooled_output = self.dropout(pooled_output, training=training)  # TODO: shouldn't this have rate = classifier dropout?
 
         logits = self.classifier(pooled_output)
         probs = tf.nn.sigmoid(logits)
@@ -234,6 +238,27 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
         self.compiled_metrics.update_state(y, y_pred.probs)
 
         return {m.name: m.result() for m in self.metrics}
+
+    def get_config(self):
+        config = {
+            'bert_config': self.bert.config.to_dict(),
+            'custom_loss_fn_name': self.custom_loss_fn.__name__ if self.custom_loss_fn else None,
+        }
+        return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        bert_config = BertConfig.from_dict(config['bert_config'])
+
+        custom_loss_fn = None
+        if config['custom_loss_fn_name']:
+            if config['custom_loss_fn_name'] in globals():
+                custom_loss_fn = globals()[config['custom_loss_fn_name']]
+            else:
+                raise ValueError(f"Unknown custom loss function: {config['custom_loss_fn_name']}")
+
+        new_model = cls(bert_config, custom_loss_fn=custom_loss_fn)
+        return new_model
 
 
 def create_bert_config(hidden_dropout_prob, attention_probs_dropout_prob, classifier_dropout):
