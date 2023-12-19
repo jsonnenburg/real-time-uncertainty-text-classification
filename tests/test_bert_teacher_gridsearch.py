@@ -7,19 +7,28 @@ import os
 import logging
 import shutil
 
+import tensorflow as tf
 import pandas as pd
 
 from logger_config import setup_logging
-setup_logging()
 
-logger = logging.getLogger('__name__')
+logger = logging.getLogger(__name__)
 
 from src.models.bert_model import create_bert_config
-from src.training.train_bert_teacher import run_bert_grid_search, train_model
+from src.training.train_bert_teacher import run_bert_grid_search, train_model, setup_config_directories
 from src.utils.data import SimpleDataLoader, Dataset
 
 
 def main(args):
+    log_dir = os.path.join(args.output_dir, 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_file_path = os.path.join(log_dir, 'grid_search_log.txt')
+    setup_logging(log_file_path)
+
+    logger.info("Starting grid search.")
+
+    tf.random.set_seed(args.seed)
+
     data_loader = SimpleDataLoader(dataset_dir=args.input_data_dir)
     data_loader.load_dataset()
     dataset = data_loader.get_dataset()
@@ -47,13 +56,13 @@ def main(args):
     else:
         best_config = create_bert_config(best_dropout_combination[0], best_dropout_combination[1],
                                          best_dropout_combination[2])
-        eval_metrics = train_model(config=best_config, dataset=combined_dataset, output_dir=args.output_dir,
+        best_paths = setup_config_directories(args.output_dir, best_config, final_model=True)
+        eval_metrics = train_model(paths=best_paths, config=best_config, dataset=combined_dataset,
                                    batch_size=args.batch_size, learning_rate=args.learning_rate, epochs=args.epochs,
                                    max_length=args.max_length, mc_dropout_inference=args.mc_dropout_inference,
-                                   save_model=True, training_final_model=True)
+                                   save_model=True)
         f1 = eval_metrics['f1_score']
         logger.info(f"Final f1 score of best model configuration: {f1}")
-
     if args.cleanup:
         for directory in os.listdir("."):
             if os.path.isdir(directory) and directory.startswith("temp"):
@@ -67,7 +76,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=16)  # Reduced for testing
     parser.add_argument('--epochs', type=int, default=1)  # Reduced for testing
     parser.add_argument('--max_length', type=int, default=48)
-    parser.add_argument( '-mcd', '--mc_dropout_inference', action='store_true', help='Enable MC dropout inference.')
+    parser.add_argument('-mcd', '--mc_dropout_inference', action='store_true', help='Enable MC dropout inference.')
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cleanup', type=bool, default=False, help='Remove all subdirectories with temp prefix from output dir.')

@@ -4,17 +4,15 @@ import logging
 import os
 import shutil
 
+logger = logging.getLogger(__name__)
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 from keras.callbacks import TensorBoard
+from sklearn.metrics import classification_report
 
 from logger_config import setup_logging
-
-setup_logging()
-
-logger = logging.getLogger(__name__)
-
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess, get_tf_dataset
 
@@ -65,6 +63,9 @@ def compute_metrics(model, eval_data):
         # avg_entropy = np.mean(pred_entropy_score(prob_predictions_np))
         ece = ece_score(labels_np, class_predictions_np, prob_predictions_np)
         return {
+            "y_true": labels_np.tolist(),
+            "y_pred": class_predictions_np.tolist(),
+            "y_prob": prob_predictions_np.tolist(),
             "accuracy_score": serialize_metric(acc),
             "precision_score": serialize_metric(prec),
             "recall_score": serialize_metric(rec),
@@ -109,6 +110,9 @@ def compute_mc_dropout_metrics(model, eval_data, n=20):
         avg_entropy = np.mean([pred_entropy_score( tf.nn.sigmoid(total_logits[:, i, :].squeeze())) for i in range(total_logits.shape[1])])
         ece = ece_score(labels_np, mean_class_predictions_np, mean_prob_predictions_np)
         return {
+            "y_true": labels_np.tolist(),
+            "y_pred": mean_class_predictions_np.tolist(),
+            "y_prob": mean_prob_predictions_np.tolist(),
             "accuracy_score": serialize_metric(acc),
             "precision_score": serialize_metric(prec),
             "recall_score": serialize_metric(rec),
@@ -122,38 +126,57 @@ def compute_mc_dropout_metrics(model, eval_data, n=20):
         raise "MC dropout metrics could not be computed successfully."
 
 
-def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, learning_rate: float, epochs: int,
-                max_length: int = 48, mc_dropout_inference: bool = True, save_model: bool = False,
-                training_final_model: bool = False):
+def generate_file_path(dir_name: str, identifier: str) -> str:
+    """Generate unique directory for each model and save outputs in subdirectories."""
+    subdir_name = os.path.join(dir_name, f'{identifier}')
+    os.makedirs(subdir_name, exist_ok=True)
+    return subdir_name
+
+
+def setup_config_directories(base_dir: str, config, final_model: bool) -> dict:
+    """
+    Creates a directory for each model configuration and returns a dictionary with the paths to the results and
+    model directories.
+
+    :param base_dir:
+    :param config:
+    :return:
+    """
+    prefix = 'final' if final_model else 'temp'
+    suffix = f'hd{int(config.hidden_dropout_prob * 100):03d}_ad{int(config.attention_probs_dropout_prob * 100):03d}_cd{int(config.classifier_dropout * 100):03d}'
+    config_dir = os.path.join(base_dir, f'{prefix}_{suffix}')
+
+    paths = {
+        "results_dir": os.path.join(config_dir, 'results'),
+        "model_dir": os.path.join(config_dir, 'model'),
+        "log_dir": os.path.join(base_dir, 'logs')
+    }
+
+    for path in paths.values():
+        os.makedirs(path, exist_ok=True)
+
+    return paths
+
+
+def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning_rate: float, epochs: int,
+                max_length: int = 48, mc_dropout_inference: bool = True, save_model: bool = False):
     """
     Trains a teacher BERT model and records the validation set performance, either for one stochastic forward pass or
     for M stochastic forward passes, with dropout enabled (MC dropout).
 
+    :param paths: Dictionary with paths to the log, results, and model directories.
     :param config:
     :param dataset:
-    :param output_dir:
     :param batch_size:
     :param learning_rate:
     :param epochs:
     :param max_length:
     :param mc_dropout_inference:
     :param save_model:
-    :param training_final_model:
     :return: eval_metrics
     """
 
     model = AleatoricMCDropoutBERT(config=config, custom_loss_fn=aleatoric_loss)
-
-    suffix = f'hd{int(config.hidden_dropout_prob * 100):03d}_ad{int(config.attention_probs_dropout_prob * 100):03d}_cd{int(config.classifier_dropout * 100):03d}'
-    dir_prefix = 'temp' if not training_final_model else 'final'
-
-    def generate_file_path(identifier: str) -> str:
-        """Generate unique directory for each model and save outputs in subdirectories."""
-        dir_name = os.path.join(output_dir, f'{dir_prefix}_{suffix}')
-        os.makedirs(dir_name, exist_ok=True)
-        subdir_name = os.path.join(dir_name, f'{identifier}')
-        os.makedirs(subdir_name, exist_ok=True)
-        return subdir_name
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     model.compile(
@@ -181,12 +204,10 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
     test_data = get_tf_dataset(tokenized_dataset, 'test')
     test_data = test_data.batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
 
-    log_dir = generate_file_path('logs')
     # TODO: individual output subdir for each run
-    tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
+    tensorboard_callback = TensorBoard(log_dir=paths['log_dir'], histogram_freq=1)
 
-    history_log_file = os.path.join(log_dir, "training_history.txt")
-    history_saver = HistorySaver(file_path=history_log_file)
+    history_saver = HistorySaver(file_path=os.path.join(paths['log_dir'], 'grid_search_log.txt'))
 
     history = model.fit(
         train_data,
@@ -212,17 +233,21 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
         "max_length": max_length
     }
     eval_metrics["model_config"] = model_config_info
-    with open(os.path.join(generate_file_path('results'), 'eval_results.json'), 'w') as f:
+    with open(os.path.join(paths['results_dir'], 'eval_results.json'), 'w') as f:
         json.dump(eval_metrics, f)
+    logging.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
 
     if save_model:
-        model.save_weights(os.path.join(generate_file_path('model'), 'model.h5'), save_format='h5')
+        model.save_weights(os.path.join(paths['model_dir'], 'model.h5'), save_format='h5')
 
     if mc_dropout_inference:
+        logger.info("Computing MC dropout metrics.")
         mc_dropout_metrics = compute_mc_dropout_metrics(model, eval_data)
         mc_dropout_metrics["model_config"] = model_config_info
-        with open(generate_file_path('results') + '/mc_dropout_metrics.json', 'w') as f:
+        with open(paths['results_dir'] + '/mc_dropout_metrics.json', 'w') as f:
             json.dump(mc_dropout_metrics, f)
+        logging.info(
+            f"\n==== Classification report  (MC dropout) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
         return mc_dropout_metrics
 
     return eval_metrics
@@ -230,11 +255,13 @@ def train_model(config, dataset: Dataset, output_dir: str, batch_size: int, lear
 
 def run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs, classifier_dropout_probs, args):
     """
+    Wrapper function to run a grid search over the dropout probabilities of the teacher BERT model.
 
     :param dataset:
     :param hidden_dropout_probs:
     :param attention_dropout_probs:
     :param classifier_dropout_probs:
+    :param args:
     :return: best_f1, best_dropout_combination
     """
     best_dropout_combination = (None, None, None)
@@ -245,14 +272,13 @@ def run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs,
             for classifier_dropout in classifier_dropout_probs:
                 current_dropout_combination = (hidden_dropout, attention_dropout, classifier_dropout)
                 try:
-                    logger.info(f"Training model with dropout combination {current_dropout_combination}.")
+                    logger.info(f"Training intermediate model with dropout combination {current_dropout_combination}.")
                     config = create_bert_config(hidden_dropout, attention_dropout, classifier_dropout)
-                    logger.info('Created BERT config.')
-                    eval_metrics = train_model(config=config, dataset=dataset, output_dir=args.output_dir,
-                                               batch_size=args.batch_size, learning_rate=args.learning_rate,
-                                               epochs=args.epochs, max_length=args.max_length,
-                                               mc_dropout_inference=args.mc_dropout_inference, save_model=False,
-                                               training_final_model=False)
+                    paths = setup_config_directories(args.output_dir, config, final_model=False)
+                    eval_metrics = train_model(paths=paths, config=config, dataset=dataset, batch_size=args.batch_size,
+                                               learning_rate=args.learning_rate, epochs=args.epochs,
+                                               max_length=args.max_length,
+                                               mc_dropout_inference=args.mc_dropout_inference, save_model=False)
                     f1 = eval_metrics['f1_score']  # note that eval_results is either eval_results or mc_dropout_results
                     if f1 > best_f1:
                         best_f1 = f1
@@ -273,6 +299,14 @@ def run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs,
     
 
 def main(args):
+    log_dir = os.path.join(args.output_dir, 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_file_path = os.path.join(log_dir, 'grid_search_log.txt')
+    setup_logging(log_file_path)
+
+    logger.info("Starting grid search.")
+
+    tf.random.set_seed(args.seed)
 
     data_loader = SimpleDataLoader(dataset_dir=args.input_data_dir)
     data_loader.load_dataset()
@@ -294,10 +328,12 @@ def main(args):
         raise ValueError("No best dropout combination saved.")
     else:
         best_config = create_bert_config(best_dropout_combination[0], best_dropout_combination[1], best_dropout_combination[2])
-        eval_metrics = train_model(config=best_config, dataset=combined_dataset, output_dir=args.output_dir,
+        best_paths = setup_config_directories(args.output_dir, best_config, final_model=True)
+        logging.info("Training final model with best dropout combination.")
+        eval_metrics = train_model(paths=best_paths, config=best_config, dataset=combined_dataset,
                                    batch_size=args.batch_size, learning_rate=args.learning_rate, epochs=args.epochs,
                                    max_length=args.max_length, mc_dropout_inference=args.mc_dropout_inference,
-                                   save_model=True, training_final_model=True)
+                                   save_model=True)
         f1 = eval_metrics['f1_score']
         logger.info(f"Final f1 score of best model configuration: {f1}")
     if args.cleanup:
@@ -313,11 +349,11 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--max_length", type=int, default=48)
-    parser.add_argument( '-mcd', '--mc_dropout_inference', action='store_true', help='Enable MC dropout inference.')
+    parser.add_argument('-mcd', '--mc_dropout_inference', action='store_true', help='Enable MC dropout inference.')
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--cleanup', type=bool, default=False, help='Remove all subdirectories with temp prefix from output dir.')
+    parser.add_argument('--cleanup', action='store_true',
+                        help='Remove all subdirectories with temp prefix from output dir.')
     args = parser.parse_args()
-
 
     main(args)
