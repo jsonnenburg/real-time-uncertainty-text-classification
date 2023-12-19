@@ -324,6 +324,14 @@ def main(args):
     combined_training = pd.concat([dataset.train, dataset.val])
     combined_dataset = Dataset(train=combined_training, test=dataset.test)
 
+    if args.save_datasets:
+        data_dir = os.path.join(args.output_dir, 'data')
+        dataset.train.to_csv(os.path.join(data_dir, 'train.csv'), sep='\t')
+        dataset.val.to_csv(os.path.join(data_dir, 'val.csv'), sep='\t')
+        dataset.test.to_csv(os.path.join(data_dir, 'test.csv'), sep='\t')
+        combined_dataset.train.to_csv(os.path.join(data_dir, 'combined_train.csv'), sep='\t')
+        combined_dataset.test.to_csv(os.path.join(data_dir, 'combined_test.csv'), sep='\t')
+
     if best_dropout_combination is None:
         raise ValueError("No best dropout combination saved.")
     else:
@@ -352,6 +360,7 @@ if __name__ == '__main__':
     parser.add_argument('-mcd', '--mc_dropout_inference', action='store_true', help='Enable MC dropout inference.')
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--save_datasets', action='store_true')
     parser.add_argument('--cleanup', action='store_true',
                         help='Remove all subdirectories with temp prefix from output dir.')
     args = parser.parse_args()
