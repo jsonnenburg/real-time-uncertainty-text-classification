@@ -207,7 +207,7 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
     def call(self, inputs, training=False, mask=None):
         bert_outputs = self.bert(inputs, training=training)
         pooled_output = bert_outputs.pooler_output
-        pooled_output = self.dropout(pooled_output, training=training)  # TODO: shouldn't this have rate = classifier dropout?
+        pooled_output = self.dropout(pooled_output, training=training)
 
         logits = self.classifier(pooled_output)
         probs = tf.nn.sigmoid(logits)
