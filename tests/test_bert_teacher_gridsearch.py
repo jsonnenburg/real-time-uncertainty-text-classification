@@ -7,7 +7,7 @@ import os
 import logging
 import shutil
 
-import tensorflow as tf
+# import tensorflow as tf
 import pandas as pd
 
 from logger_config import setup_logging
@@ -27,7 +27,7 @@ def main(args):
 
     logger.info("Starting grid search.")
 
-    tf.random.set_seed(args.seed)
+    # tf.random.set_seed(args.seed)
 
     data_loader = SimpleDataLoader(dataset_dir=args.input_data_dir)
     data_loader.load_dataset()
@@ -54,11 +54,16 @@ def main(args):
     if args.save_datasets:
         logger.info("Saving datasets.")
         data_dir = os.path.join(args.output_dir, 'data')
-        dataset.train.to_csv(os.path.join(data_dir, 'train.csv'), sep='\t')
-        dataset.val.to_csv(os.path.join(data_dir, 'val.csv'), sep='\t')
-        dataset.test.to_csv(os.path.join(data_dir, 'test.csv'), sep='\t')
-        combined_dataset.train.to_csv(os.path.join(data_dir, 'combined_train.csv'), sep='\t')
-        combined_dataset.test.to_csv(os.path.join(data_dir, 'combined_test.csv'), sep='\t')
+        os.makedirs(data_dir, exist_ok=True)
+        # if any csv files already exist, raise an error
+        if any([os.path.exists(os.path.join(data_dir, f)) for f in os.listdir(data_dir)]):
+            raise FileExistsError("Dataset files already exist.")
+        else:
+            dataset.train.to_csv(os.path.join(data_dir, 'train.csv'), sep='\t')
+            dataset.val.to_csv(os.path.join(data_dir, 'val.csv'), sep='\t')
+            dataset.test.to_csv(os.path.join(data_dir, 'test.csv'), sep='\t')
+            combined_dataset.train.to_csv(os.path.join(data_dir, 'combined_train.csv'), sep='\t')
+            combined_dataset.test.to_csv(os.path.join(data_dir, 'combined_test.csv'), sep='\t')
 
     if best_dropout_combination is None:
         raise ValueError("No best dropout combination saved.")
