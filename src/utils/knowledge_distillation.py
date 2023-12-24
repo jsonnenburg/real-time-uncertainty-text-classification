@@ -46,7 +46,11 @@ def mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int = 5, k: in
     :param seed_list: List of seeds for reproducibility.
     :return: df: Augmented dataset with original features, labels, and uncertain labels.
     """
-    augmented_data = []
+    augmented_data = {
+        'sequences': [],
+        'labels': [],
+        'predictions': []
+    }
 
     if seed_list is None:
         seed_list = range(m)
@@ -60,20 +64,36 @@ def mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int = 5, k: in
             all_logits.append(logits)
 
         all_logits = tf.stack(all_logits, axis=0)
-        mu_t = tf.nn.sigmoid(all_logits)
+        mu_t = tf.nn.sigmoid(all_logits)  # shape is (m, batch_size, num_classes)
 
         sigma_hat_sq = tf.math.reduce_variance(all_logits, axis=0)
         sigma_hat = tf.math.sqrt(sigma_hat_sq)
         sigma_tilde = tf.reduce_mean(sigma_hat, axis=1)
+        sigma_tilde_reshaped = tf.reshape(sigma_tilde, [1, -1, 1])  # reshape to (1, batch_size, 1)
 
-        eps = tf.random.normal(shape=[k, mu_t.shape[1], mu_t.shape[2]])
+        eps = tf.random.normal(shape=[k, mu_t.shape[1], mu_t.shape[2]])  # what should the shape be? (k, batch_size, num_classes)
         for i in range(k):
-            y_t = mu_t + (sigma_tilde * eps[i, :, :])
+            y_t = tf.clip_by_value(mu_t + (sigma_tilde_reshaped * eps[i, :, :]), clip_value_min=0.0, clip_value_max=1.0)  # probabilistic predictions
+            # y_t should be (k, batch_size, num_classes)
             for j in range(m):
-                augmented_data.append((text, labels.numpy(), y_t[j, :, :].numpy()))
+                # for each original sequence, we now save m*k augmented sequences
+                for seq_idx in range(features['input_ids'].shape[0]):  # iterate over each sequence in the batch
+                    # extract individual sequence, label, and prediction
+                    sequence = text[seq_idx].numpy().decode('utf-8')
+                    label = labels[seq_idx].numpy()
+                    prediction = y_t[j, seq_idx, :].numpy()[0] # shape should be (num_classes,)
+                    # prediction is shape (batch_size, )
+                    # append individual sequence, label, and prediction to augmented_data
+                    augmented_data['sequences'].append(sequence)
+                    augmented_data['labels'].append(label)
+                    augmented_data['predictions'].append(prediction)
 
-    df = pd.DataFrame(augmented_data, columns=['text', 'target_ground_truth', 'target_teacher'])
-    return df
+            # TODO: switch for loops around so that we end up with augmented sequences grouped by original sequence
+
+    # convert augmented_data to a data frame
+    columns = ['sequence', 'ground_truth_label', 'teacher_predicted_label']
+    transfer_df = pd.DataFrame(augmented_data, columns=columns)
+    return transfer_df
 
 
 # transfer training set = training set + validation set (for now)
