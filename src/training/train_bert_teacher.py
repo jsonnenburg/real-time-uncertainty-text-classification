@@ -238,7 +238,7 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
     logging.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
 
     if save_model:
-        model.save_weights(os.path.join(paths['model_dir'], 'model.h5'), save_format='h5')
+        model.save(os.path.join(paths['model_dir'], 'model.tf'), save_format='tf')
 
     if mc_dropout_inference:
         logger.info("Computing MC dropout metrics.")

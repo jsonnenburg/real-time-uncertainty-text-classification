@@ -51,7 +51,7 @@ def mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int = 5, k: in
     if seed_list is None:
         seed_list = range(m)
 
-    for features, labels in tqdm(data, desc="Processing Data"):
+    for text, features, labels in tqdm(data, desc="Processing Data"):
         all_logits = []
         for i in range(m):
             tf.random.set_seed(seed_list[i])
@@ -70,7 +70,7 @@ def mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int = 5, k: in
         for i in range(k):
             y_t = mu_t + (sigma_tilde * eps[i, :, :])
             for j in range(m):
-                augmented_data.append((features.numpy(), labels.numpy(), y_t[j, :, :].numpy()))
+                augmented_data.append((text, labels.numpy(), y_t[j, :, :].numpy()))
 
     df = pd.DataFrame(augmented_data, columns=['text', 'target_ground_truth', 'target_teacher'])
     return df
@@ -100,27 +100,43 @@ transfer_dataset.test = load_data(transfer_data_path, 'combined_test')
 # preprocess transfer training set
 input_ids, attention_masks, labels = bert_preprocess(transfer_dataset.train)
 training_set_preprocessed = tf.data.Dataset.from_tensor_slices((
+        transfer_dataset.train['text'].values,
         {
             'input_ids': input_ids,
             'attention_mask': attention_masks
         },
         labels
-    ))
+    )).batch(16)
 
 # load BERT teacher model with best configuration
 config = create_bert_config(teacher_config['hidden_dropout_prob'],
                             teacher_config['attention_probs_dropout_prob'],
                             teacher_config['classifier_dropout'])
 
+# teacher = AleatoricMCDropoutBERT(config=config, custom_loss_fn=aleatoric_loss)
+
+# teacher.built = True  # https://stackoverflow.com/questions/63658086/tensorflow-2-0-valueerror-while-loading-weights-from-h5-file
+
 teacher = AleatoricMCDropoutBERT(config=config, custom_loss_fn=aleatoric_loss)
 
-teacher.built = True  # https://stackoverflow.com/questions/63658086/tensorflow-2-0-valueerror-while-loading-weights-from-h5-file
+teacher.load_weights('/Users/johann/Documents/Uni/real-time-uncertainty-text-classification/tests/bert_grid_search_test/final_hd070_ad070_cd070/model/model.tf')
 
 # load weights
-teacher.load_weights('/Users/johann/Documents/Uni/real-time-uncertainty-text-classification/tests/bert_grid_search_test/final_hd070_ad070_cd070/model/model.h5')
+# teacher = tf.keras.models.load_model('/Users/johann/Documents/Uni/real-time-uncertainty-text-classification/tests/bert_grid_search_test/final_hd070_ad070_cd070/model/model.tf', custom_objects={'AleatoricMCDropoutBERT': AleatoricMCDropoutBERT, 'aleatoric_loss': aleatoric_loss, 'null_loss': null_loss})
+
+teacher.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=2e-5),
+        loss={'classifier': aleatoric_loss, 'log_variance': null_loss},
+        metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
+        run_eagerly=True
+    )
 
 # sample from teacher
 transfer_df = mc_dropout_transfer_sampling(teacher, training_set_preprocessed, m=5, k=10)
 
+save_dir = '/Users/johann/Documents/Uni/real-time-uncertainty-text-classification/tests/distribution_distillation/data'
+os.makedirs(save_dir, exist_ok=True)
+
 # save augmented dataset
-transfer_df.to_csv('/Users/johann/Documents/Uni/real-time-uncertainty-text-classification/tests/distribution_distillation/data/transfer_train.csv', sep='\t', index=False)
+transfer_df.to_csv(os.path.join(save_dir, 'transfer_data.csv'), sep='\t', index=False)
+

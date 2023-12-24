@@ -57,7 +57,7 @@ def main(args):
         os.makedirs(data_dir, exist_ok=True)
         # if any csv files already exist, raise an error
         if any([os.path.exists(os.path.join(data_dir, f)) for f in os.listdir(data_dir)]):
-            raise FileExistsError("Dataset files already exist.")
+            logger.warning("Dataset files already exist.")
         else:
             dataset.train.to_csv(os.path.join(data_dir, 'train.csv'), sep='\t')
             dataset.val.to_csv(os.path.join(data_dir, 'val.csv'), sep='\t')
