@@ -91,8 +91,8 @@ def mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int = 5, k: in
             # TODO: switch for loops around so that we end up with augmented sequences grouped by original sequence
 
     # convert augmented_data to a data frame
-    columns = ['sequence', 'ground_truth_label', 'teacher_predicted_label']
-    transfer_df = pd.DataFrame(augmented_data, columns=columns)
+    # columns = ['sequence', 'ground_truth_label', 'teacher_predicted_label']
+    transfer_df = pd.DataFrame(augmented_data)
     return transfer_df
 
 
