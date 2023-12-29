@@ -67,11 +67,12 @@ def transfer_data_bert_preprocess(preprocessed_data, max_length=48) -> Tuple[tf.
 
 
 def transfer_get_tf_dataset(tokenized_dataset: Dict, subset: str) -> tf.data.Dataset:
-    dataset = tf.data.Dataset.from_tensor_slices((
-        {
-            'input_ids': tokenized_dataset[subset][0],
-            'attention_mask': tokenized_dataset[subset][1]
-        },
-        [tokenized_dataset[subset][2], tokenized_dataset[subset][3]]
-    ))
+    input_features = {
+        'input_ids': tokenized_dataset[subset][0],
+        'attention_mask': tokenized_dataset[subset][1]
+    }
+    binary_targets = tf.cast(tokenized_dataset[subset][2], dtype=tf.float32)
+    continuous_targets = tf.cast(tokenized_dataset[subset][3], dtype=tf.float32)
+
+    dataset = tf.data.Dataset.from_tensor_slices((input_features, (binary_targets, continuous_targets)))
     return dataset

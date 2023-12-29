@@ -18,9 +18,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 import tensorflow as tf
-from keras.callbacks import TensorBoard
 
-from src.utils.training import HistorySaver
 
 def main(args):
     """
@@ -42,7 +40,8 @@ def main(args):
 
     subset_size = 100
     dataset.train = dataset.train.sample(n=min(subset_size, len(dataset.train)), random_state=args.seed)
-    dataset.val = dataset.val.sample(n=min(subset_size, len(dataset.val)), random_state=args.seed)
+    if dataset.val is not None:
+        dataset.val = dataset.val.sample(n=min(subset_size, len(dataset.val)), random_state=args.seed)
     dataset.test = dataset.test.sample(n=min(subset_size, len(dataset.test)), random_state=args.seed)
 
     # prepare data for transfer learning
@@ -70,9 +69,8 @@ def main(args):
     # initialize student model
     student_model = AleatoricMCDropoutBERT(student_model_config, custom_loss_fn=shen_loss)
 
-    # load teacher model weights into student model
-    teacher_weight_path = 'path_to_teacher_model_weights'
-    student_model.load_weights(teacher_weight_path)
+    # load teacher model weights into student model'
+    student_model.load_weights('bert_grid_search_test/final_hd070_ad070_cd070/model/model.tf')
 
     # compile with shen loss
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.learning_rate)
@@ -85,7 +83,7 @@ def main(args):
 
     student_model.fit(
         train_data,
-        validation_split=0.1,
+        validation_data=val_data if val_data is not None else test_data,
         epochs=args.epochs,
         batch_size=args.batch_size
     )

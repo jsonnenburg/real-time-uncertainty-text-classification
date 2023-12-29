@@ -28,6 +28,8 @@ def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
 
     # TODO: if y_pred is ,1: return cross_entropy_loss
 
+    # TODO: handle y_true being a 2-dim tensor in case of transfer learning!
+
     # Standard cross-entropy loss between logits and true labels
     logits_np = logits.numpy().flatten()
     cross_entropy_loss = tf.convert_to_tensor(bce(y_true, logits_np))
@@ -66,7 +68,7 @@ def shen_loss(y_true, y_pred) -> tf.Tensor:
     weight = tf.convert_to_tensor(1, dtype=tf.float32)
 
     try:
-        y_true, y_teacher = y_true['labels'], y_true['predictions']
+        y_true, y_teacher = y_true[0], y_true[1]
 
         Lt = aleatoric_loss(y_true, y_pred)
         Ls = gaussian_mle_loss(y_teacher, y_pred)
