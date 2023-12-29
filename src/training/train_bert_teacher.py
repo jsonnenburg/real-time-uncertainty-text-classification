@@ -107,7 +107,7 @@ def compute_mc_dropout_metrics(model, eval_data, n=20):
         f1 = f1_score(labels_np, mean_class_predictions_np)
         nll = nll_score(labels_np, mean_prob_predictions_np)
         bs = brier_score(labels_np, mean_prob_predictions_np)
-        avg_entropy = np.mean([pred_entropy_score( tf.nn.sigmoid(total_logits[:, i, :].squeeze())) for i in range(total_logits.shape[1])])
+        avg_entropy = np.mean([pred_entropy_score(tf.nn.sigmoid(total_logits[:, i, :].squeeze())) for i in range(total_logits.shape[1])])
         ece = ece_score(labels_np, mean_class_predictions_np, mean_prob_predictions_np)
         return {
             "y_true": labels_np.tolist(),

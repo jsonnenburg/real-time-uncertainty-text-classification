@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 from tensorflow import Tensor
@@ -9,6 +9,8 @@ from transformers import TFBertForSequenceClassification, TFBertMainLayer, BertC
 import tensorflow as tf
 from transformers.modeling_tf_outputs import TFSequenceClassifierOutput
 from transformers.modeling_tf_utils import get_initializer, TFModelInputType
+
+from src.utils.loss_functions import shen_loss
 
 
 class CustomTFSequenceClassifierOutput(TFSequenceClassifierOutput):
@@ -272,3 +274,104 @@ def create_bert_config(hidden_dropout_prob, attention_probs_dropout_prob, classi
 
     return config
 
+
+class StudentBody(tf.keras.Model):
+    def __init__(self, bert_base):
+        super().__init__()
+        self.bert_base = bert_base
+
+    def call(self, inputs, training=False, mask=None):
+        bert_outputs = self.bert(inputs, training=training)
+        pooled_output = bert_outputs.pooler_output
+        return pooled_output
+
+
+class StudentHead(tf.keras.Model):
+    def __init__(self, classifier_head, log_variance_head, dropout_rate=0.1):
+        super().__init__()
+        self.dropout = tf.keras.layers.Dropout(dropout_rate)
+        self.classifier_head = classifier_head
+        self.log_variance_predictor = log_variance_head
+
+    def call(self, inputs, training=False, mask=None):
+        dropout_output = self.dropout(inputs, training=training)
+
+        logits = self.classifier_head(dropout_output)
+        probs = tf.nn.sigmoid(logits)
+        log_variances = self.log_variance_predictor(dropout_output)
+
+        return CustomTFSequenceClassifierOutput(
+            logits=logits,
+            probs=probs,
+            log_variances=log_variances,
+        )
+
+
+class MCDropoutBERTStudent(tf.keras.Model):
+    def __init__(self, student_model, dropout_rate):
+        super().__init__()
+        self.student_body = StudentBody(student_model.bert)
+        self.student_head = StudentHead(student_model.classifier, student_model.log_variance_predictor, dropout_rate)
+
+    def cached_mc_dropout_predict(self, inputs, n=20) -> dict:
+        student_body_outputs = self.student_body(inputs, training=False)  # cached output of BERT base
+
+        all_logits = []
+        all_probs = []
+        all_log_variances = []
+        for i in range(n):
+            tf.random.set_seed(range(n)[i])
+            outputs = self.student_head(student_body_outputs, training=True)
+            logits = outputs['logits']
+            probs = outputs['probs']
+            log_variances = outputs['log_variances']
+            all_logits.append(logits)
+            all_probs.append(probs)
+            all_log_variances.append(log_variances)
+
+        all_logits = tf.stack(all_logits, axis=0)
+        all_probs = tf.stack(all_probs, axis=0)
+        all_log_variances = tf.stack(all_log_variances, axis=0)
+        mean_predictions = tf.reduce_mean(all_logits, axis=0)
+        var_predictions = tf.math.reduce_variance(all_logits, axis=0)
+
+        # TODO: validate that this works as intended
+
+        return {'logits': all_logits,
+                'probs': all_probs,
+                'log_variances': all_log_variances,
+                'mean_predictions': mean_predictions,
+                'var_predictions': var_predictions,
+                }
+
+
+# usage:
+# initialize student model
+student_model_config = create_bert_config(...)  # Provide the necessary configuration
+student_model = AleatoricMCDropoutBERT(student_model_config)
+
+# load teacher model weights into student model
+teacher_weight_path = 'path_to_teacher_model_weights'
+student_model.load_weights(teacher_weight_path)
+
+# compile with shen loss
+student_model.compile(
+    optimizer=tf.keras.optimizers.Adam(),
+    loss=shen_loss,
+    metrics=['accuracy']
+)
+
+# fine-tune on transfer set
+student_model.fit(...)
+
+# save fine-tuned student model
+...
+
+# create MCDropoutBERTStudent instance from fine-tuned student model
+mc_dropout_student = MCDropoutBERTStudent(student_model, dropout_rate=0.1)
+
+# obtain "cached" MC dropout predictions on test set
+mc_dropout_student.cached_mc_dropout_predict(...)
+
+# save predictions
+...
