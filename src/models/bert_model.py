@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 from typing import Optional, Tuple
 
 import numpy as np
+from keras.src.callbacks import TensorBoard
 from tensorflow import Tensor
 from transformers import TFBertForSequenceClassification, TFBertMainLayer, BertConfig, \
     TFAutoModelForSequenceClassification, TFPreTrainedModel, TFBertModel
@@ -10,7 +12,8 @@ import tensorflow as tf
 from transformers.modeling_tf_outputs import TFSequenceClassifierOutput
 from transformers.modeling_tf_utils import get_initializer, TFModelInputType
 
-from src.utils.loss_functions import shen_loss
+from src.utils.loss_functions import shen_loss, null_loss
+from src.utils.training import HistorySaver
 
 
 class CustomTFSequenceClassifierOutput(TFSequenceClassifierOutput):
@@ -343,35 +346,3 @@ class MCDropoutBERTStudent(tf.keras.Model):
                 'mean_predictions': mean_predictions,
                 'var_predictions': var_predictions,
                 }
-
-
-# usage:
-# initialize student model
-student_model_config = create_bert_config(...)  # Provide the necessary configuration
-student_model = AleatoricMCDropoutBERT(student_model_config)
-
-# load teacher model weights into student model
-teacher_weight_path = 'path_to_teacher_model_weights'
-student_model.load_weights(teacher_weight_path)
-
-# compile with shen loss
-student_model.compile(
-    optimizer=tf.keras.optimizers.Adam(),
-    loss=shen_loss,
-    metrics=['accuracy']
-)
-
-# fine-tune on transfer set
-student_model.fit(...)
-
-# save fine-tuned student model
-...
-
-# create MCDropoutBERTStudent instance from fine-tuned student model
-mc_dropout_student = MCDropoutBERTStudent(student_model, dropout_rate=0.1)
-
-# obtain "cached" MC dropout predictions on test set
-mc_dropout_student.cached_mc_dropout_predict(...)
-
-# save predictions
-...
