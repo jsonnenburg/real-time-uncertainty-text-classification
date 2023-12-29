@@ -128,6 +128,16 @@ training_set_preprocessed = tf.data.Dataset.from_tensor_slices((
         labels
     )).batch(16)
 
+input_ids, attention_masks, labels = bert_preprocess(transfer_dataset.test)
+test_set_preprocessed = tf.data.Dataset.from_tensor_slices((
+        transfer_dataset.test['text'].values,
+        {
+            'input_ids': input_ids,
+            'attention_mask': attention_masks
+        },
+        labels
+    )).batch(16)
+
 # load BERT teacher model with best configuration
 config = create_bert_config(teacher_config['hidden_dropout_prob'],
                             teacher_config['attention_probs_dropout_prob'],
@@ -152,11 +162,13 @@ teacher.compile(
     )
 
 # sample from teacher
-transfer_df = mc_dropout_transfer_sampling(teacher, training_set_preprocessed, m=5, k=10)
+transfer_df_train = mc_dropout_transfer_sampling(teacher, training_set_preprocessed, m=5, k=10)
+transfer_df_test = mc_dropout_transfer_sampling(teacher, test_set_preprocessed, m=5, k=5)
 
 save_dir = '/Users/johann/Documents/Uni/real-time-uncertainty-text-classification/tests/distribution_distillation/data'
 os.makedirs(save_dir, exist_ok=True)
 
 # save augmented dataset
-transfer_df.to_csv(os.path.join(save_dir, 'transfer_data.csv'), sep='\t', index=False)
-
+transfer_df_train.to_csv(os.path.join(save_dir, 'transfer_data_train.csv'), sep='\t', index=False)
+transfer_df_test.to_csv(os.path.join(save_dir, 'transfer_data_test.csv'), sep='\t', index=False)
+# TODO: how to validate distribution distillation? -> validation set?
