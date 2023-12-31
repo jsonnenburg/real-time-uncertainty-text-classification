@@ -17,28 +17,19 @@ def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
     Aleatoric uncertainty loss function from Kendall & Gal (2017) for fine-tuning the teacher model.
     Does not require ground truth variance.
     """
-    # y_pred is assumed to contain both logits and log variance, concatenated
-    # The first half of the dimensions are the logits, the second half the log variances
+    if not isinstance(y_pred, dict) or 'logits' not in y_pred or 'log_variances' not in y_pred:
+        print(y_pred)
+        raise ValueError("y_pred must be a dictionary with 'logits' and 'log_variances' keys.")
+
+    logits = y_pred['logits']
+    log_variances = y_pred['log_variances']
+
     bce = tf.losses.BinaryCrossentropy(from_logits=True)
+    cross_entropy_loss = bce(y_true, logits)
 
-    try:
-        logits, log_variances = y_pred['logits'], y_pred['log_variances']
-    except TypeError:
-        return tf.convert_to_tensor(bce(y_true, y_pred.numpy().reshape(y_true.shape)).numpy())
-
-    # TODO: if y_pred is ,1: return cross_entropy_loss
-
-    # TODO: handle y_true being a 2-dim tensor in case of transfer learning!
-
-    # Standard cross-entropy loss between logits and true labels
-    logits_np = logits.numpy().flatten()
-    cross_entropy_loss = tf.convert_to_tensor(bce(y_true, logits_np))
-
-    # Adjust cross-entropy loss by the predicted variance (aleatoric uncertainty)
     precision = tf.exp(-log_variances)
-    adjusted_loss = precision * cross_entropy_loss + log_variances
+    adjusted_loss = (precision * cross_entropy_loss) + log_variances
 
-    # The loss is the mean over all adjusted losses
     return tf.reduce_mean(adjusted_loss)
 
 
