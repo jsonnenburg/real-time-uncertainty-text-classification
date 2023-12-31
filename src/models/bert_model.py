@@ -244,6 +244,7 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
 
         return {m.name: m.result() for m in self.metrics}
 
+
     def get_config(self):
         config = {
             'bert_config': self.bert.config.to_dict(),
@@ -346,3 +347,138 @@ class MCDropoutBERTStudent(tf.keras.Model):
                 'mean_predictions': mean_predictions,
                 'var_predictions': var_predictions,
                 }
+
+
+class AleatoricMCDropoutBERTStudent(tf.keras.Model):
+    def __init__(self, config, custom_loss_fn=None):
+        super(AleatoricMCDropoutBERTStudent, self).__init__()
+        self.bert = TFBertModel.from_pretrained(
+            'bert-base-uncased',
+            config=config
+        )
+        self.dropout = tf.keras.layers.Dropout(
+            rate=config.classifier_dropout
+        )
+        self.classifier = tf.keras.layers.Dense(
+            units=1,
+            kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=config.initializer_range),
+            name="classifier",
+            trainable=True
+        )
+        self.log_variance_predictor = tf.keras.layers.Dense(
+            units=1,
+            kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=config.initializer_range),
+            name="log_variance",
+            trainable=True
+        )
+
+        if custom_loss_fn:
+            self.custom_loss_fn = custom_loss_fn
+        else:
+            self.custom_loss_fn = tf.keras.losses.BinaryCrossentropy()
+
+    def call(self, inputs, training=False, mask=None):
+        bert_outputs = self.bert(inputs, training=training)
+        pooled_output = bert_outputs.pooler_output
+        pooled_output = self.dropout(pooled_output, training=training)
+
+        logits = self.classifier(pooled_output)
+        probs = tf.nn.sigmoid(logits)
+        log_variances = self.log_variance_predictor(pooled_output)
+
+        return CustomTFSequenceClassifierOutput(
+            logits=logits,
+            probs=probs,
+            log_variances=log_variances,
+            hidden_states=bert_outputs.hidden_states,
+            attentions=bert_outputs.attentions
+        )
+
+    def cached_mc_dropout_predict(self, inputs, n=20, dropout_rate=0.1) -> dict:
+        self.dropout = tf.keras.layers.Dropout(dropout_rate)
+
+        bert_outputs = self.bert(inputs, training=False)
+        pooled_output = bert_outputs.pooler_output
+
+        all_logits = []
+        all_probs = []
+        all_log_variances = []
+        for i in range(n):
+            tf.random.set_seed(range(n)[i])
+            dropout_output = self.dropout(pooled_output, training=True)
+            logits = self.classifier(dropout_output)
+            probs = tf.nn.sigmoid(logits)
+            log_variances = self.log_variance_predictor(dropout_output)
+            all_logits.append(logits)
+            all_probs.append(probs)
+            all_log_variances.append(log_variances)
+
+        all_logits = tf.stack(all_logits, axis=0)
+        all_probs = tf.stack(all_probs, axis=0)
+        all_log_variances = tf.stack(all_log_variances, axis=0)
+        mean_predictions = tf.reduce_mean(all_logits, axis=0)
+        var_predictions = tf.math.reduce_variance(all_logits, axis=0)
+
+        # TODO: validate that this works as intended
+
+        return {'logits': all_logits,
+                'probs': all_probs,
+                'log_variances': all_log_variances,
+                'mean_predictions': mean_predictions,
+                'var_predictions': var_predictions,
+                }
+
+    def train_step(self, data):
+        x, y = data
+
+        with tf.GradientTape() as tape:
+            y_pred = self(x, training=True)
+            if not isinstance(y_pred, CustomTFSequenceClassifierOutput):
+                raise TypeError("The output of the model is not CustomTFSequenceClassifierOutput.")
+            if self.custom_loss_fn is not None:
+                loss = self.custom_loss_fn(y, {'logits': y_pred.logits, 'log_variances': y_pred.log_variances})
+            else:
+                raise ValueError("No custom loss function provided!")
+
+        gradients = tape.gradient(loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        self.compiled_metrics.update_state(y, y_pred.probs)
+
+        return {m.name: m.result() for m in self.metrics}
+
+    def test_step(self, data):
+        x, y = data
+
+        y_pred = self.call(x, training=False)
+        if not isinstance(y_pred, CustomTFSequenceClassifierOutput):
+            raise TypeError("The output of the model is not CustomTFSequenceClassifierOutput.")
+        if self.custom_loss_fn is not None:
+            loss = self.custom_loss_fn(y, {'logits': y_pred.logits, 'log_variances': y_pred.log_variances})
+        else:
+            raise ValueError("No custom loss function provided!")
+
+        self.compiled_metrics.update_state(y, y_pred.probs)
+
+        return {m.name: m.result() for m in self.metrics}
+
+
+    def get_config(self):
+        config = {
+            'bert_config': self.bert.config.to_dict(),
+            'custom_loss_fn_name': self.custom_loss_fn.__name__ if self.custom_loss_fn else None,
+        }
+        return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        bert_config = BertConfig.from_dict(config['bert_config'])
+
+        custom_loss_fn = None
+        if config['custom_loss_fn_name']:
+            if config['custom_loss_fn_name'] in globals():
+                custom_loss_fn = globals()[config['custom_loss_fn_name']]
+            else:
+                raise ValueError(f"Unknown custom loss function: {config['custom_loss_fn_name']}")
+
+        new_model = cls(bert_config, custom_loss_fn=custom_loss_fn)
+        return new_model

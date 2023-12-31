@@ -7,7 +7,7 @@ import pandas as pd
 
 from logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset
-from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT, MCDropoutBERTStudent
+from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERTStudent
 from src.training.train_bert_teacher import serialize_metric
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
@@ -67,9 +67,9 @@ def main(args):
                                               teacher_config['classifier_dropout'])
 
     # initialize student model
-    student_model = AleatoricMCDropoutBERT(student_model_config, custom_loss_fn=shen_loss)
+    student_model = AleatoricMCDropoutBERTStudent(student_model_config, custom_loss_fn=shen_loss)
 
-    # load teacher model weights into student model'
+    # load teacher model weights into student model
     student_model.load_weights('bert_grid_search_test/final_hd070_ad070_cd070/model/model.tf')
 
     # compile with shen loss
@@ -94,7 +94,7 @@ def main(args):
     student_model.save(os.path.join(model_dir, 'model.tf'), save_format='tf')
 
     # create MCDropoutBERTStudent instance from fine-tuned student model
-    mc_dropout_student = MCDropoutBERTStudent(student_model, dropout_rate=0.1)
+    # mc_dropout_student = MCDropoutBERTStudent(student_model, dropout_rate=0.1)
 
     # obtain "cached" MC dropout predictions on test set
     total_logits = []
@@ -105,8 +105,8 @@ def main(args):
     total_labels = []
 
     for batch in test_data:
-        features, labels, predictions = batch
-        outputs = mc_dropout_student.cached_mc_dropout_predict(features)
+        features, (labels, predictions) = batch
+        outputs = student_model.cached_mc_dropout_predict(features, n=20, dropout_rate=0.1)
         logits = outputs['logits']
         probs = outputs['probs']
         log_variances = outputs['log_variances']
@@ -142,7 +142,7 @@ def main(args):
             "logits": total_logits.tolist(),
             "probs": total_probs.tolist(),
             "log_variances": total_log_variances.tolist(),
-            "y_true": labels_np.tolist(),
+            "y_true": labels_np.astype(int).tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
             "accuracy_score": serialize_metric(acc),
@@ -158,8 +158,9 @@ def main(args):
         os.makedirs(result_dir, exist_ok=True)
         with open(os.path.join(result_dir, 'student_mc_dropout_metrics.json'), 'w') as f:
             json.dump(metrics, f)
+        logger.info("MC dropout metrics successfully computed.")
     else:
-        raise "MC dropout metrics could not be computed successfully."
+        logger.error("No mean predictions or labels found.")
 
 
 if __name__ == '__main__':
