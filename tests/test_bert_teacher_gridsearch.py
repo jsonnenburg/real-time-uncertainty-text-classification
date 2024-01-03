@@ -4,15 +4,12 @@ Minimal run config test of grid searching BERT teacher model.
 import argparse
 import os
 
-import logging
 import shutil
 
 # import tensorflow as tf
 import pandas as pd
 
 from logger_config import setup_logging
-
-logger = logging.getLogger(__name__)
 
 from src.models.bert_model import create_bert_config
 from src.training.train_bert_teacher import run_bert_grid_search, train_model, setup_config_directories
@@ -23,7 +20,7 @@ def main(args):
     log_dir = os.path.join(args.output_dir, 'logs')
     os.makedirs(log_dir, exist_ok=True)
     log_file_path = os.path.join(log_dir, 'grid_search_log.txt')
-    setup_logging(log_file_path)
+    logger = setup_logging(log_file_path, name=__name__)
 
     logger.info("Starting grid search.")
 

@@ -7,7 +7,7 @@ import pandas as pd
 
 from logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset
-from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
+from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERTStudent
 from src.training.train_bert_teacher import serialize_metric
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
@@ -26,17 +26,17 @@ def main(args):
     """
     log_dir = os.path.join(args.output_dir, 'logs')
     os.makedirs(log_dir, exist_ok=True)
-    log_file_path = os.path.join(log_dir, 'student_knowledge_distillation_log.txt')
+    log_file_path = os.path.join(log_dir, 'student_uncertainty_distillation_log.txt')
     setup_logging(log_file_path)
 
     logger.info("Starting distribution distillation.")
 
-    with open('/Users/johann/Documents/Uni/real-time-uncertainty-text-classification/tests/bert_grid_search_test/final_hd070_ad070_cd070/results/eval_results.json', 'r') as f:
-        teacher_config = json.load(f)['model_config']
+    with open(os.path.join(args.teacher_model_save_dir, 'config.json'), 'r') as f:
+        teacher_config = json.load(f)
 
     dataset = Dataset()
-    dataset.train = pd.read_csv(os.path.join(args.transfer_data_dir, 'transfer_data_train.csv'), sep='\t')
-    dataset.test = pd.read_csv(os.path.join(args.transfer_data_dir, 'transfer_data_test.csv'), sep='\t')
+    dataset.train = pd.read_csv(os.path.join(args.transfer_data_dir, 'transfer_train.csv'), sep='\t')
+    dataset.test = pd.read_csv(os.path.join(args.transfer_data_dir, 'transfer_test.csv'), sep='\t')
 
     subset_size = 100
     dataset.train = dataset.train.sample(n=min(subset_size, len(dataset.train)), random_state=args.seed)
@@ -67,10 +67,10 @@ def main(args):
                                               teacher_config['classifier_dropout'])
 
     # initialize student model
-    student_model = AleatoricMCDropoutBERT(student_model_config, custom_loss_fn=shen_loss)
+    student_model = AleatoricMCDropoutBERTStudent(student_model_config, custom_loss_fn=shen_loss)
 
     # load teacher model weights into student model
-    student_model.load_weights('bert_grid_search_test/final_hd070_ad070_cd070/model').expect_partial()
+    student_model.load_weights(os.path.join(args.teacher_model_save_dir)).expect_partial()
 
     # compile with shen loss
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.learning_rate)
@@ -93,7 +93,7 @@ def main(args):
     # save fine-tuned student model
     model_dir = os.path.join(args.output_dir, 'model')
     os.makedirs(model_dir, exist_ok=True)
-    student_model.save(os.path.join(model_dir), save_format='tf')
+    student_model.save(os.path.join(model_dir, 'model_files'),  save_format='tf')
     logger.info('Student model successfully saved.')
 
     # create MCDropoutBERTStudent instance from fine-tuned student model
@@ -170,6 +170,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--transfer_data_dir', type=str)
+    parser.add_argument('--teacher_model_save_dir', type=str)
     parser.add_argument('--learning_rate', type=float, default=2e-5)
     parser.add_argument('--batch_size', type=int, default=16)  # Reduced for testing
     parser.add_argument('--epochs', type=int, default=1)  # Reduced for testing

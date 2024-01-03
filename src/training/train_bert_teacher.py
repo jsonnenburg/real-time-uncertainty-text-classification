@@ -4,13 +4,13 @@ import logging
 import os
 import shutil
 
-logger = logging.getLogger(__name__)
-
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 from keras.callbacks import TensorBoard
 from sklearn.metrics import classification_report
+
+logger = logging.getLogger(__name__)
 
 from logger_config import setup_logging
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
@@ -232,21 +232,23 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
         "epochs": epochs,
         "max_length": max_length
     }
-    eval_metrics["model_config"] = model_config_info
     with open(os.path.join(paths['results_dir'], 'eval_results.json'), 'w') as f:
         json.dump(eval_metrics, f)
-    logging.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
+    with open(os.path.join(paths['model_dir'], 'config.json'), 'w') as f:
+        json.dump(model_config_info, f)
+    logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
 
     if save_model:
-        model.save(os.path.join(paths['model_dir'], 'model.tf'), save_format='tf')
+        model.save(os.path.join(paths['model_dir'], 'model_files'),  save_format='tf')
 
     if mc_dropout_inference:
         logger.info("Computing MC dropout metrics.")
         mc_dropout_metrics = compute_mc_dropout_metrics(model, eval_data)
-        mc_dropout_metrics["model_config"] = model_config_info
-        with open(paths['results_dir'] + '/mc_dropout_metrics.json', 'w') as f:
+        with open(os.path.join(paths['results_dir'], 'mc_dropout_metrics.json'), 'w') as f:
             json.dump(mc_dropout_metrics, f)
-        logging.info(
+        with open(os.path.join(paths['model_dir'], 'config.json'), 'w') as f:
+            json.dump(model_config_info, f)  # TODO: is this really required? saving config twice
+        logger.info(
             f"\n==== Classification report  (MC dropout) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
         return mc_dropout_metrics
 
@@ -302,7 +304,7 @@ def main(args):
     log_dir = os.path.join(args.output_dir, 'logs')
     os.makedirs(log_dir, exist_ok=True)
     log_file_path = os.path.join(log_dir, 'grid_search_log.txt')
-    setup_logging(log_file_path)
+    logger = setup_logging(log_file_path)
 
     logger.info("Starting grid search.")
 
@@ -343,7 +345,7 @@ def main(args):
     else:
         best_config = create_bert_config(best_dropout_combination[0], best_dropout_combination[1], best_dropout_combination[2])
         best_paths = setup_config_directories(args.output_dir, best_config, final_model=True)
-        logging.info("Training final model with best dropout combination.")
+        logger.info("Training final model with best dropout combination.")
         eval_metrics = train_model(paths=best_paths, config=best_config, dataset=combined_dataset,
                                    batch_size=args.batch_size, learning_rate=args.learning_rate, epochs=args.epochs,
                                    max_length=args.max_length, mc_dropout_inference=args.mc_dropout_inference,

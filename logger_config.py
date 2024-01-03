@@ -2,8 +2,8 @@ import logging
 from typing import Optional
 
 
-def setup_logging(log_file_path: Optional[str] = None):
-    logger = logging.getLogger()
+def setup_logging(log_file_path: Optional[str] = None, name: str = __name__):
+    logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
 
     c_handler = logging.StreamHandler()
@@ -16,3 +16,5 @@ def setup_logging(log_file_path: Optional[str] = None):
         f_handler = logging.FileHandler(log_file_path)
         f_handler.setFormatter(formatter)
         logger.addHandler(f_handler)
+
+    return logger
