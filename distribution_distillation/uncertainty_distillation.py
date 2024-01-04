@@ -5,6 +5,8 @@ import os
 import numpy as np
 import pandas as pd
 
+import time
+
 import logging
 
 from sklearn.metrics import classification_report
@@ -115,6 +117,7 @@ def main(args):
     total_variances = []
     total_labels = []
 
+    start_time = time.time()
     for batch in test_data:
         features, (labels, predictions) = batch
         outputs = student_model.cached_mc_dropout_predict(features, n=args.n, dropout_rate=args.dropout_rate)
@@ -129,6 +132,9 @@ def main(args):
         total_mean_logits.extend(mean_predictions.numpy())
         total_variances.extend(var_predictions.numpy())
         total_labels.extend(labels.numpy())
+    total_time = time.time() - start_time
+    average_inference_time = total_time / len(total_labels)
+    logger.info(f"Average inference time per sample: {average_inference_time:.4f} seconds.")
 
     total_logits = np.concatenate(total_logits, axis=1)  # concatenate along the batch dimension
     total_probs = np.concatenate(total_probs, axis=1)
@@ -156,6 +162,7 @@ def main(args):
             "y_true": labels_np.astype(int).tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
+            "average_inference_time": serialize_metric(average_inference_time),
             "accuracy_score": serialize_metric(acc),
             "precision_score": serialize_metric(prec),
             "recall_score": serialize_metric(rec),

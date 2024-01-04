@@ -4,6 +4,8 @@ import logging
 import os
 import shutil
 
+import time
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -41,11 +43,15 @@ def compute_metrics(model, eval_data):
     total_labels = []
 
     # iterate over all batches in eval_data
+    start_time = time.time()
     for batch in eval_data:
         features, labels = batch
         predictions = model(features, training=False)
         total_logits.extend(predictions.logits)
         total_labels.extend(labels.numpy())
+    total_time = time.time() - start_time
+    average_inference_time = total_time / len(total_labels)
+    logger.info(f"Average inference time per sample: {average_inference_time:.4f} seconds.")
 
     all_labels = np.array(total_labels)
 
@@ -66,6 +72,7 @@ def compute_metrics(model, eval_data):
             "y_true": labels_np.tolist(),
             "y_pred": class_predictions_np.tolist(),
             "y_prob": prob_predictions_np.tolist(),
+            "average_inference_time": serialize_metric(average_inference_time),
             "accuracy_score": serialize_metric(acc),
             "precision_score": serialize_metric(prec),
             "recall_score": serialize_metric(rec),
@@ -85,6 +92,7 @@ def compute_mc_dropout_metrics(model, eval_data, n=20):
     total_variances = []
     total_labels = []
 
+    start_time = time.time()
     for batch in eval_data:
         features, labels = batch
         logits, mean_predictions, var_predictions = mc_dropout_predict(model, features, n=n)
@@ -92,6 +100,9 @@ def compute_mc_dropout_metrics(model, eval_data, n=20):
         total_mean_logits.extend(mean_predictions.numpy())
         total_variances.extend(var_predictions.numpy())
         total_labels.extend(labels.numpy())
+    total_time = time.time() - start_time
+    average_inference_time = total_time / len(total_labels)
+    logger.info(f"Average inference time per sample: {average_inference_time:.4f} seconds.")
 
     total_logits = np.concatenate(total_logits, axis=1)  # concatenate along the batch dimension
 
@@ -113,6 +124,7 @@ def compute_mc_dropout_metrics(model, eval_data, n=20):
             "y_true": labels_np.tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
+            "average_inference_time": serialize_metric(average_inference_time),
             "accuracy_score": serialize_metric(acc),
             "precision_score": serialize_metric(prec),
             "recall_score": serialize_metric(rec),
