@@ -10,8 +10,6 @@ import tensorflow as tf
 from keras.callbacks import TensorBoard
 from sklearn.metrics import classification_report
 
-logger = logging.getLogger(__name__)
-
 from logger_config import setup_logging
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess, get_tf_dataset
@@ -301,11 +299,6 @@ def run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs,
     
 
 def main(args):
-    log_dir = os.path.join(args.output_dir, 'logs')
-    os.makedirs(log_dir, exist_ok=True)
-    log_file_path = os.path.join(log_dir, 'grid_search_log.txt')
-    logger = setup_logging(log_file_path)
-
     logger.info("Starting grid search.")
 
     tf.random.set_seed(args.seed)
@@ -372,5 +365,12 @@ if __name__ == '__main__':
     parser.add_argument('--cleanup', action='store_true',
                         help='Remove all subdirectories with temp prefix from output dir.')
     args = parser.parse_args()
+
+    log_dir = os.path.join(args.output_dir, 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_file_path = os.path.join(log_dir, 'grid_search_log.txt')
+    setup_logging(log_file_path)
+
+    logger = logging.getLogger()
 
     main(args)
