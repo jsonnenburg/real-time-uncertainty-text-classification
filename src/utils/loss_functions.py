@@ -1,12 +1,5 @@
 import tensorflow as tf
 
-from logger_config import setup_logging
-import logging
-
-logger = logging.getLogger(__name__)
-
-setup_logging()
-
 
 def null_loss(y_true, y_pred) -> tf.Tensor:
     return tf.zeros_like(y_true)
@@ -18,7 +11,6 @@ def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
     Does not require ground truth variance.
     """
     if not isinstance(y_pred, dict) or 'logits' not in y_pred or 'log_variances' not in y_pred:
-        print(y_pred)
         raise ValueError("y_pred must be a dictionary with 'logits' and 'log_variances' keys.")
 
     logits = y_pred['logits']
@@ -45,8 +37,7 @@ def gaussian_mle_loss(y_true, y_pred) -> tf.Tensor:
         # TODO: check if this corresponds to Eq. 10 in Shen et al. (2021)
         return loss
     except KeyError:
-        logger.error("y_pred must be a dict with keys 'logits' and 'log_variances'.")
-        raise
+        raise KeyError("y_pred must be a dict with keys 'logits' and 'log_variances'.")
 
 
 def shen_loss(y_true, y_pred) -> tf.Tensor:
@@ -67,8 +58,7 @@ def shen_loss(y_true, y_pred) -> tf.Tensor:
 
         return tf.reduce_mean(Ltotal)
     except KeyError:
-        logger.error("y_true must be a dict with keys 'labels' and 'predictions'.")
-        raise
+        raise KeyError("y_true must be a dict with keys 'labels' and 'predictions'.")
 
 
 # shen loss function - implementation for classification in pytorch

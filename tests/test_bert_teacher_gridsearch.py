@@ -6,7 +6,7 @@ import os
 
 import shutil
 
-# import tensorflow as tf
+import logging
 import pandas as pd
 
 from logger_config import setup_logging
@@ -15,16 +15,11 @@ from src.models.bert_model import create_bert_config
 from src.training.train_bert_teacher import run_bert_grid_search, train_model, setup_config_directories
 from src.utils.data import SimpleDataLoader, Dataset
 
+logger = logging.getLogger()
+
 
 def main(args):
-    log_dir = os.path.join(args.output_dir, 'logs')
-    os.makedirs(log_dir, exist_ok=True)
-    log_file_path = os.path.join(log_dir, 'grid_search_log.txt')
-    logger = setup_logging(log_file_path, name=__name__)
-
     logger.info("Starting grid search.")
-
-    # tf.random.set_seed(args.seed)
 
     data_loader = SimpleDataLoader(dataset_dir=args.input_data_dir)
     data_loader.load_dataset()
@@ -93,5 +88,10 @@ if __name__ == '__main__':
     parser.add_argument('--save_datasets', action='store_true')
     parser.add_argument('--cleanup', type=bool, default=False, help='Remove all subdirectories with temp prefix from output dir.')
     args = parser.parse_args()
+
+    log_dir = os.path.join(args.output_dir, 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_file_path = os.path.join(log_dir, 'grid_search_log.txt')
+    setup_logging(logger, log_file_path)
 
     main(args)

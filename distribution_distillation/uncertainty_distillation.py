@@ -20,6 +20,8 @@ from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1
 
 import tensorflow as tf
 
+logger = logging.getLogger()
+
 
 def main(args):
     """
@@ -192,7 +194,5 @@ if __name__ == '__main__':
     os.makedirs(log_dir, exist_ok=True)
     log_file_path = os.path.join(log_dir, 'student_uncertainty_distillation_log.txt')
     setup_logging(log_file_path)
-
-    logger = logging.getLogger()
 
     main(args)

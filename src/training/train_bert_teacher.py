@@ -21,6 +21,8 @@ from src.utils.loss_functions import aleatoric_loss, null_loss
 from src.utils.data import SimpleDataLoader, Dataset
 from src.utils.training import HistorySaver
 
+logger = logging.getLogger(__name__)
+
 
 def serialize_metric(value):
     if np.isscalar(value):
@@ -74,7 +76,7 @@ def compute_metrics(model, eval_data):
             "ece_score": serialize_metric(ece)
         }
     else:
-        raise "Metrics could not be computed successfully."
+        logger.error("Metrics could not be computed successfully.")
 
 
 def compute_mc_dropout_metrics(model, eval_data, n=20):
@@ -121,7 +123,7 @@ def compute_mc_dropout_metrics(model, eval_data, n=20):
             "ece_score": serialize_metric(ece)
         }
     else:
-        raise "MC dropout metrics could not be computed successfully."
+        logger.error("MC dropout metrics could not be computed successfully.")
 
 
 def generate_file_path(dir_name: str, identifier: str) -> str:
@@ -219,7 +221,7 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
     if isinstance(eval_data, tf.data.Dataset):
         eval_metrics = compute_metrics(model, eval_data)
     else:
-        raise "Eval data is not in TensorFlow-conforming dataset format."
+        logger.error("Eval data is not in TensorFlow-conforming dataset format.")
 
     model_config_info = {
         "hidden_dropout_prob": config.hidden_dropout_prob,
@@ -325,7 +327,7 @@ def main(args):
         os.makedirs(data_dir, exist_ok=True)
         # if any csv files already exist, raise an error
         if any([os.path.exists(os.path.join(data_dir, f)) for f in os.listdir(data_dir)]):
-            raise FileExistsError("Dataset files already exist.")
+            logger.warning("Dataset files already exist.")
         else:
             dataset.train.to_csv(os.path.join(data_dir, 'train.csv'), sep='\t')
             dataset.val.to_csv(os.path.join(data_dir, 'val.csv'), sep='\t')
@@ -334,7 +336,7 @@ def main(args):
             combined_dataset.test.to_csv(os.path.join(data_dir, 'combined_test.csv'), sep='\t')
 
     if best_dropout_combination is None:
-        raise ValueError("No best dropout combination saved.")
+        logger.error("No best dropout combination saved.")
     else:
         best_config = create_bert_config(best_dropout_combination[0], best_dropout_combination[1], best_dropout_combination[2])
         best_paths = setup_config_directories(args.output_dir, best_config, final_model=True)
@@ -369,8 +371,6 @@ if __name__ == '__main__':
     log_dir = os.path.join(args.output_dir, 'logs')
     os.makedirs(log_dir, exist_ok=True)
     log_file_path = os.path.join(log_dir, 'grid_search_log.txt')
-    setup_logging(log_file_path)
-
-    logger = logging.getLogger()
+    setup_logging(logger, log_file_path)
 
     main(args)
