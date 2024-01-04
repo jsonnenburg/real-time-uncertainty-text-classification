@@ -183,7 +183,7 @@ def main(args):
 
     # initialize teacher model
     teacher = AleatoricMCDropoutBERT(config=config, custom_loss_fn=aleatoric_loss)
-    teacher.load_weights(os.path.join(args.teacher_model_save_dir, 'model_files')).expect_partial()
+    teacher.load_weights(args.teacher_model_save_dir).expect_partial()
     teacher.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=2e-5),
             loss={'classifier': aleatoric_loss, 'log_variance': null_loss},

@@ -239,7 +239,7 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
     logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
 
     if save_model:
-        model.save(os.path.join(paths['model_dir'], 'model_files'),  save_format='tf')
+        model.save(paths['model_dir'],  save_format='tf')
 
     if mc_dropout_inference:
         logger.info("Computing MC dropout metrics.")
@@ -249,7 +249,7 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
         with open(os.path.join(paths['model_dir'], 'config.json'), 'w') as f:
             json.dump(model_config_info, f)  # TODO: is this really required? saving config twice
         logger.info(
-            f"\n==== Classification report  (MC dropout) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
+            f"\n==== Classification report  (MC dropout) ====\n {classification_report(mc_dropout_metrics['y_true'], mc_dropout_metrics['y_pred'])}")
         return mc_dropout_metrics
 
     return eval_metrics

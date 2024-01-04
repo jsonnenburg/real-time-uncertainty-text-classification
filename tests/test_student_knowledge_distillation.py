@@ -93,7 +93,7 @@ def main(args):
     # save fine-tuned student model
     model_dir = os.path.join(args.output_dir, 'model')
     os.makedirs(model_dir, exist_ok=True)
-    student_model.save(os.path.join(model_dir), save_format='tf')
+    student_model.save(model_dir, save_format='tf')
     logger.info('Student model successfully saved.')
 
     # create MCDropoutBERTStudent instance from fine-tuned student model
