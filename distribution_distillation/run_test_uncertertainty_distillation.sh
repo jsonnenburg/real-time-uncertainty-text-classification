@@ -10,6 +10,8 @@ LEARNING_RATE=0.00002
 BATCH_SIZE=16
 EPOCHS=1
 MAX_LENGTH=48
+N=20
+DROPOUT_RATE=0.1
 OUTPUT_DIR="tests/distribution_distillation/"
 SEED=42
 
@@ -19,5 +21,7 @@ python $PYTHON_SCRIPT --transfer_data_dir $TRANSFER_DATA_DIR \
                       --batch_size $BATCH_SIZE \
                       --epochs $EPOCHS \
                       --max_length $MAX_LENGTH \
+                      --n $N \
+                      --dropout_rate $DROPOUT_RATE \
                       --output_dir $OUTPUT_DIR \
                       --seed $SEED

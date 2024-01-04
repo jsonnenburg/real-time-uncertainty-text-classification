@@ -5,30 +5,28 @@ import os
 import numpy as np
 import pandas as pd
 
+import logging
+
+from sklearn.metrics import classification_report
+
 from logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset
-from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERTStudent
+from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
 from src.training.train_bert_teacher import serialize_metric
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
 from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, nll_score, brier_score,
                                pred_entropy_score, ece_score)
 
-import logging
-logger = logging.getLogger(__name__)
-
 import tensorflow as tf
 
 
 def main(args):
     """
-    Test the student knowledge distillation pipeline. Setup similar to the grid search testing pipeline.
-    """
-    log_dir = os.path.join(args.output_dir, 'logs')
-    os.makedirs(log_dir, exist_ok=True)
-    log_file_path = os.path.join(log_dir, 'student_uncertainty_distillation_log.txt')
-    setup_logging(log_file_path)
+    Student knowledge distillation pipeline. Setup similar to the grid search testing pipeline.
 
+    # TODO: Add grid-search for optimal dropout rate.
+    """
     logger.info("Starting distribution distillation.")
 
     with open(os.path.join(args.teacher_model_save_dir, 'config.json'), 'r') as f:
@@ -67,10 +65,10 @@ def main(args):
                                               teacher_config['classifier_dropout'])
 
     # initialize student model
-    student_model = AleatoricMCDropoutBERTStudent(student_model_config, custom_loss_fn=shen_loss)
+    student_model = AleatoricMCDropoutBERT(student_model_config, custom_loss_fn=shen_loss)
 
     # load teacher model weights into student model
-    student_model.load_weights(os.path.join(args.teacher_model_save_dir)).expect_partial()
+    student_model.load_weights(args.teacher_model_save_dir).expect_partial()
 
     # compile with shen loss
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.learning_rate)
@@ -93,11 +91,18 @@ def main(args):
     # save fine-tuned student model
     model_dir = os.path.join(args.output_dir, 'model')
     os.makedirs(model_dir, exist_ok=True)
-    student_model.save(os.path.join(model_dir, 'model_files'),  save_format='tf')
+    student_model.save(model_dir,  save_format='tf')
+    model_config_info = {
+        "learning_rate": args.learning_rate,
+        "batch_size": args.batch_size,
+        "epochs": args.epochs,
+        "max_length": args.max_length,
+        "dropout_rate": args.dropout_rate,
+        "n": args.n
+    }
+    with open(os.path.join(model_dir, 'config.json'), 'w') as f:
+        json.dump(model_config_info, f)
     logger.info('Student model successfully saved.')
-
-    # create MCDropoutBERTStudent instance from fine-tuned student model
-    # mc_dropout_student = MCDropoutBERTStudent(student_model, dropout_rate=0.1)
 
     # obtain "cached" MC dropout predictions on test set
     logger.info('Computing MC dropout metrics...')
@@ -110,7 +115,7 @@ def main(args):
 
     for batch in test_data:
         features, (labels, predictions) = batch
-        outputs = student_model.cached_mc_dropout_predict(features, n=20, dropout_rate=0.1)
+        outputs = student_model.cached_mc_dropout_predict(features, n=args.n, dropout_rate=args.dropout_rate)
         logits = outputs['logits']
         probs = outputs['probs']
         log_variances = outputs['log_variances']
@@ -158,6 +163,8 @@ def main(args):
             "avg_pred_entropy_score": serialize_metric(avg_entropy),
             "ece_score": serialize_metric(ece)
         }
+        logger.info(
+            f"\n==== Classification report  (MC dropout) ====\n {classification_report(metrics['y_true'], metrics['y_pred'])}")
         result_dir = os.path.join(args.output_dir, 'results')
         os.makedirs(result_dir, exist_ok=True)
         with open(os.path.join(result_dir, 'student_mc_dropout_metrics.json'), 'w') as f:
@@ -175,8 +182,17 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=16)  # Reduced for testing
     parser.add_argument('--epochs', type=int, default=1)  # Reduced for testing
     parser.add_argument('--max_length', type=int, default=48)
+    parser.add_argument('--n', type=int, default=20, help="Number of MC dropout samples to compute for student MCD metrics.")
+    parser.add_argument('--dropout_rate', type=float, default=0.1, help="Dropout rate for MC dropout student model.")
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
+
+    log_dir = os.path.join(args.output_dir, 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_file_path = os.path.join(log_dir, 'student_uncertainty_distillation_log.txt')
+    setup_logging(log_file_path)
+
+    logger = logging.getLogger()
 
     main(args)
