@@ -192,7 +192,6 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=1)  # Reduced for testing
     parser.add_argument('--max_length', type=int, default=48)
     parser.add_argument('--n', type=int, default=20, help="Number of MC dropout samples to compute for student MCD metrics.")
-    parser.add_argument('--dropout_rate', type=float, default=0.1, help="Dropout rate for MC dropout student model.")
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()

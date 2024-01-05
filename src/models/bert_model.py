@@ -44,6 +44,7 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
         self.log_variance_predictor = tf.keras.layers.Dense(
             units=1,
             kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=config.initializer_range),
+            # activation='linear',
             name="log_variance",
             trainable=True
         )
@@ -178,6 +179,7 @@ class AleatoricMCDropoutBERTStudent(tf.keras.Model):
         self.log_variance_predictor = tf.keras.layers.Dense(
             units=1,
             kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=config.initializer_range),
+            activation='linear',
             name="log_variance",
             trainable=True
         )
@@ -204,9 +206,7 @@ class AleatoricMCDropoutBERTStudent(tf.keras.Model):
             attentions=bert_outputs.attentions
         )
 
-    def cached_mc_dropout_predict(self, inputs, n=20, dropout_rate=0.1) -> dict:
-        self.dropout = tf.keras.layers.Dropout(dropout_rate)
-
+    def cached_mc_dropout_predict(self, inputs, n=20) -> dict:
         bert_outputs = self.bert(inputs, training=False)
         pooled_output = bert_outputs.pooler_output
 
