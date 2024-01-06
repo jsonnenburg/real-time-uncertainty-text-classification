@@ -23,7 +23,7 @@ from src.utils.loss_functions import aleatoric_loss, null_loss
 from src.utils.data import SimpleDataLoader, Dataset
 from src.utils.training import HistorySaver
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 
 def serialize_metric(value):
@@ -217,24 +217,6 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
     test_data = test_data.batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
 
     # TODO: individual output subdir for each run
-    tensorboard_callback = TensorBoard(log_dir=paths['log_dir'], histogram_freq=1)
-
-    history_saver = HistorySaver(file_path=os.path.join(paths['log_dir'], 'grid_search_log.txt'))
-
-    history = model.fit(
-        train_data,
-        validation_data=val_data if val_data is not None else test_data,
-        epochs=epochs,
-        callbacks=[history_saver, tensorboard_callback]
-    )
-    
-    eval_data = val_data if val_data is not None else test_data
-
-    if isinstance(eval_data, tf.data.Dataset):
-        eval_metrics = compute_metrics(model, eval_data)
-    else:
-        logger.error("Eval data is not in TensorFlow-conforming dataset format.")
-
     model_config_info = {
         "hidden_dropout_prob": config.hidden_dropout_prob,
         "attention_probs_dropout_prob": config.attention_probs_dropout_prob,
@@ -244,22 +226,51 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
         "epochs": epochs,
         "max_length": max_length
     }
-    with open(os.path.join(paths['results_dir'], 'eval_results.json'), 'w') as f:
-        json.dump(eval_metrics, f)
     with open(os.path.join(paths['model_dir'], 'config.json'), 'w') as f:
         json.dump(model_config_info, f)
-    logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
 
-    if save_model:
-        model.save(paths['model_dir'],  save_format='tf')
+    checkpoint_path = os.path.join(paths['model_dir'], 'cp-{epoch:02d}.ckpt')
+    checkpoint_dir = os.path.dirname(checkpoint_path)
+    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+    if latest_checkpoint:
+        model.load_weights(latest_checkpoint)
+        logger.info(f"Found model checkpoint, loaded weights from {latest_checkpoint}")
+
+    cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
+                                                     save_weights_only=True,
+                                                     verbose=1)
+
+    tensorboard_callback = TensorBoard(log_dir=paths['log_dir'], histogram_freq=1)
+
+    history_callback = HistorySaver(file_path=os.path.join(paths['log_dir'], 'grid_search_log.txt'))
+
+    model.fit(
+        train_data,
+        validation_data=val_data if val_data is not None else test_data,
+        epochs=epochs,
+        callbacks=[cp_callback, history_callback, tensorboard_callback]
+    )
+
+    if not save_model:
+        files = os.listdir(paths['model_dir'])
+        for file in files:
+            if file.startswith('cp.'):
+                os.remove(os.path.join(paths['model_dir'], file))
+
+    eval_data = val_data if val_data is not None else test_data
+    if isinstance(eval_data, tf.data.Dataset):
+        eval_metrics = compute_metrics(model, eval_data)
+    else:
+        logger.error("Eval data is not in TensorFlow-conforming dataset format.")
+    with open(os.path.join(paths['results_dir'], 'eval_results.json'), 'w') as f:
+        json.dump(eval_metrics, f)
+    logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
 
     if mc_dropout_inference:
         logger.info("Computing MC dropout metrics.")
         mc_dropout_metrics = compute_mc_dropout_metrics(model, eval_data)
         with open(os.path.join(paths['results_dir'], 'mc_dropout_metrics.json'), 'w') as f:
             json.dump(mc_dropout_metrics, f)
-        with open(os.path.join(paths['model_dir'], 'config.json'), 'w') as f:
-            json.dump(model_config_info, f)  # TODO: is this really required? saving config twice
         logger.info(
             f"\n==== Classification report  (MC dropout) ====\n {classification_report(mc_dropout_metrics['y_true'], mc_dropout_metrics['y_pred'])}")
         return mc_dropout_metrics
