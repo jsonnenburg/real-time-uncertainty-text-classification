@@ -102,17 +102,21 @@ def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
 
     for text, features, labels in tqdm(data, desc="Processing Data"):
         all_logits = []
+        all_log_variances = []
         for i in range(m):
             tf.random.set_seed(seed_list[i])
             outputs = model(features, training=True)
             logits = outputs['logits']
+            log_variances = outputs['log_variances']
             all_logits.append(logits)
+            all_log_variances.append(log_variances)
 
         all_logits = tf.stack(all_logits, axis=0)
+        all_log_variances = tf.stack(all_log_variances, axis=0)
         mu_t = tf.nn.sigmoid(all_logits)  # shape is (m, batch_size, num_classes)
 
-        sigma_hat_sq = tf.math.reduce_variance(all_logits, axis=0)
-        sigma_hat = tf.math.sqrt(sigma_hat_sq)
+        # sigma_hat_sq = tf.math.reduce_variance(all_logits, axis=0)
+        sigma_hat = all_log_variances  # tf.math.sqrt(sigma_hat_sq)  # TODO: replace with log_variances from output!
         sigma_tilde = tf.reduce_mean(sigma_hat, axis=1)
         sigma_tilde_reshaped = tf.reshape(sigma_tilde, [1, -1, 1])  # reshape to (1, batch_size, 1)
 
