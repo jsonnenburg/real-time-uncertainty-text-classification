@@ -183,7 +183,14 @@ def main(args):
 
     # initialize teacher model
     teacher = AleatoricMCDropoutBERT(config=config, custom_loss_fn=aleatoric_loss)
-    teacher.load_weights(args.teacher_model_save_dir).expect_partial()
+    checkpoint_path = os.path.join(args.teacher_model_save_dir, 'cp-{epoch:02d}.ckpt')
+    checkpoint_dir = os.path.dirname(checkpoint_path)
+
+    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+    if latest_checkpoint:
+        print("Loading weights from", checkpoint_dir)
+        teacher.load_weights(latest_checkpoint)
+
     teacher.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=2e-5),
             loss={'classifier': aleatoric_loss, 'log_variance': null_loss},
@@ -196,28 +203,30 @@ def main(args):
     k = args.k
 
     if args.epistemic_only:
+        output_dir = os.path.join(args.output_dir, 'epistemic_only')
+        transfer_data_dir = os.path.join(output_dir, f'm{m}')
         transfer_df_train = epistemic_mc_dropout_transfer_sampling(teacher, training_set_preprocessed, m=m)
         transfer_df_test = epistemic_mc_dropout_transfer_sampling(teacher, test_set_preprocessed, m=m)
     else:
+        output_dir = os.path.join(args.output_dir, 'aleatoric_and_epistemic')
+        transfer_data_dir = os.path.join(output_dir, f'm{m}_k{k}')
         transfer_df_train = aleatoric_mc_dropout_transfer_sampling(teacher, training_set_preprocessed, m=m, k=k)
         transfer_df_test = aleatoric_mc_dropout_transfer_sampling(teacher, test_set_preprocessed, m=m, k=k)
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(transfer_data_dir, exist_ok=True)
 
-    transfer_df_train.to_csv(os.path.join(args.output_dir, 'transfer_train.csv'), sep='\t', index=False)
-    transfer_df_test.to_csv(os.path.join(args.output_dir, 'transfer_test.csv'), sep='\t', index=False)
+    transfer_df_train.to_csv(os.path.join(transfer_data_dir, 'transfer_train.csv'), sep='\t', index=False)
+    transfer_df_test.to_csv(os.path.join(transfer_data_dir, 'transfer_test.csv'), sep='\t', index=False)
 
 
 if __name__ == '__main__':
-    # TODO: flag for what type of uncertainty to model (only epistemic or both epistemic and aleatoric)
-
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_data_dir', type=str)
     parser.add_argument('--teacher_model_save_dir', type=str)
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--m', type=int, default=5)
     parser.add_argument('--k', type=int, default=10)
-    parser.add_argument('--epistemic_only', action='store_true')
+    parser.add_argument('--epistemic_only', action='store_true')  # if true, only model epistemic uncertainty, else also model aleatoric uncertainty
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
 

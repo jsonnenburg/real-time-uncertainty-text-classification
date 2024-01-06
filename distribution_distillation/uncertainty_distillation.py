@@ -40,6 +40,8 @@ def main(args):
     dataset.train = pd.read_csv(os.path.join(args.transfer_data_dir, 'transfer_train.csv'), sep='\t')
     dataset.test = pd.read_csv(os.path.join(args.transfer_data_dir, 'transfer_test.csv'), sep='\t')
 
+    # TODO: turn into proper script, remove test features
+
     subset_size = 100
     dataset.train = dataset.train.sample(n=min(subset_size, len(dataset.train)), random_state=args.seed)
     if dataset.val is not None:
