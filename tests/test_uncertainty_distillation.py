@@ -30,10 +30,12 @@ logger = logging.getLogger()
 def compute_student_mc_dropout_metrics(model, eval_data, n):
     total_logits = []
     total_probs = []
-    total_log_variances = []
     total_mean_logits = []
+    total_mean_variances = []
     total_variances = []
     total_labels = []
+
+    total_uncertainties = []
 
     start_time = time.time()
     for batch in eval_data:
@@ -41,14 +43,16 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
         outputs = model.cached_mc_dropout_predict(features, n=n)
         logits = outputs['logits']
         probs = outputs['probs']
-        log_variances = outputs['log_variances']
         mean_predictions = outputs['mean_predictions']
+        mean_variances = outputs['mean_variances']
         var_predictions = outputs['var_predictions']
+        total_uncertainty = outputs['total_uncertainty']
         total_logits.append(logits.numpy())
         total_probs.append(probs.numpy())
-        total_log_variances.append(log_variances.numpy())
         total_mean_logits.extend(mean_predictions.numpy())
+        total_mean_variances.extend(mean_variances.numpy())
         total_variances.extend(var_predictions.numpy())
+        total_uncertainties.extend(total_uncertainty.numpy())
         total_labels.extend(labels.numpy())
     total_time = time.time() - start_time
     average_inference_time = total_time / len(total_labels)
@@ -56,13 +60,18 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
 
     total_logits = np.concatenate(total_logits, axis=1)  # concatenate along the batch dimension
     total_probs = np.concatenate(total_probs, axis=1)
-    total_log_variances = np.concatenate(total_log_variances, axis=1)
 
     if total_mean_logits and total_labels:
         all_labels = np.array(total_labels)
         mean_prob_predictions_np = tf.nn.sigmoid(total_mean_logits).numpy().reshape(all_labels.shape)
         mean_class_predictions_np = mean_prob_predictions_np.round(0).astype(int)
+        mean_variances_np = np.array(total_mean_variances).reshape(all_labels.shape)
         labels_np = all_labels
+
+        sigmoid_logits = tf.nn.sigmoid(total_logits)
+        reshaped_logits = tf.reshape(sigmoid_logits, [-1, sigmoid_logits.shape[-1]])
+        batch_entropy_scores = pred_entropy_score(reshaped_logits)
+        avg_entropy = np.mean(batch_entropy_scores)
 
         acc = accuracy_score(labels_np, mean_class_predictions_np)
         prec = precision_score(labels_np, mean_class_predictions_np)
@@ -70,13 +79,13 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
         f1 = f1_score(labels_np, mean_class_predictions_np)
         nll = nll_score(labels_np, mean_prob_predictions_np)
         bs = brier_score(labels_np, mean_prob_predictions_np)
-        avg_entropy = np.mean(
-            [pred_entropy_score(tf.nn.sigmoid(total_logits[:, i, :].squeeze())) for i in range(total_logits.shape[1])])
+        avg_entropy = avg_entropy
         ece = ece_score(labels_np, mean_class_predictions_np, mean_prob_predictions_np)
+        tu = total_uncertainties
         metrics = {
             "logits": total_logits.tolist(),
             "probs": total_probs.tolist(),
-            "log_variances": total_log_variances.tolist(),
+            "variance": mean_variances_np.tolist(),
             "y_true": labels_np.astype(int).tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
@@ -88,7 +97,8 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
             "nll_score": serialize_metric(nll),
             "brier_score": serialize_metric(bs),
             "avg_pred_entropy_score": serialize_metric(avg_entropy),
-            "ece_score": serialize_metric(ece)
+            "ece_score": serialize_metric(ece),
+            "total_uncertainty": tu
         }
         return metrics
 
