@@ -52,8 +52,8 @@ def compute_metrics(model, eval_data):
         total_log_variances.extend(predictions.log_variances)
         total_labels.extend(labels.numpy())
     total_time = time.time() - start_time
-    average_inference_time = total_time / len(total_labels)
-    logger.info(f"Average inference time per sample: {average_inference_time:.4f} seconds.")
+    average_inference_time = total_time / len(total_labels) * 1000
+    logger.info(f"Average inference time per sample: {average_inference_time:.0f} milliseconds.")
 
     all_labels = np.array(total_labels)
 
@@ -108,8 +108,8 @@ def compute_mc_dropout_metrics(model, eval_data, n=20) -> dict:
         total_uncertainties.extend(total_uncertainty.numpy())
         total_labels.extend(labels.numpy())
     total_time = time.time() - start_time
-    average_inference_time = total_time / len(total_labels)
-    logger.info(f"Average inference time per sample: {average_inference_time:.4f} seconds.")
+    average_inference_time = total_time / len(total_labels) * 1000
+    logger.info(f"Average inference time per sample: {average_inference_time:.0f} milliseconds.")
 
     total_logits = np.concatenate(total_logits, axis=1)  # concatenate along the batch dimension
 
@@ -245,11 +245,6 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
         json.dump(model_config_info, f)
 
     checkpoint_path = os.path.join(paths['model_dir'], 'cp-{epoch:02d}.ckpt')
-    checkpoint_dir = os.path.dirname(checkpoint_path)
-    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
-    if latest_checkpoint:
-        model.load_weights(latest_checkpoint)
-        logger.info(f"Found model checkpoint, loaded weights from {latest_checkpoint}")
 
     cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                                      save_weights_only=True,
@@ -365,7 +360,7 @@ def main(args):
         os.makedirs(data_dir, exist_ok=True)
         # if any csv files already exist, raise an error
         if any([os.path.exists(os.path.join(data_dir, f)) for f in os.listdir(data_dir)]):
-            logger.warning("Dataset files already exist.")
+            logger.warning("Dataset files already exist, not saving.")
         else:
             dataset.train.to_csv(os.path.join(data_dir, 'train.csv'), sep='\t')
             dataset.val.to_csv(os.path.join(data_dir, 'val.csv'), sep='\t')
@@ -389,6 +384,7 @@ def main(args):
         for directory in os.listdir("."):
             if os.path.isdir(directory) and directory.startswith("temp"):
                 shutil.rmtree(directory)
+    logger.info("Finished grid search.")
 
 
 if __name__ == '__main__':

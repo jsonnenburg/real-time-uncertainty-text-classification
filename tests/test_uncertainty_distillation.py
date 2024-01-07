@@ -83,8 +83,8 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
         avg_entropy = avg_entropy
         ece = ece_score(labels_np, mean_class_predictions_np, mean_prob_predictions_np)
         metrics = {
-            "logits": total_logits.tolist(),
-            "probs": total_probs.tolist(),
+            # "logits": total_logits.tolist(),
+            # "probs": total_probs.tolist(),
             "y_true": labels_np.astype(int).tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
@@ -106,8 +106,6 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
 def main(args):
     """
     Student knowledge distillation pipeline. Setup similar to the grid search testing pipeline.
-
-    # TODO: Add grid-search for optimal dropout rate.
     """
     logger.info("Starting distribution distillation.")
 
