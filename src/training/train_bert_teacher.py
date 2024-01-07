@@ -5,6 +5,7 @@ import os
 import shutil
 
 import time
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -165,8 +166,9 @@ def setup_config_directories(base_dir: str, config, final_model: bool) -> dict:
     Creates a directory for each model configuration and returns a dictionary with the paths to the results and
     model directories.
 
-    :param base_dir:
-    :param config:
+    :param base_dir: Base directory for all model configurations.
+    :param config: BERT configuration.
+    :param final_model: If True, the model directory will be named 'final' instead of 'temp'.
     :return:
     """
     prefix = 'final' if final_model else 'temp'
@@ -288,7 +290,7 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
     return eval_metrics
 
 
-def run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs, classifier_dropout_probs, args):
+def run_bert_grid_search(dataset: Dataset, hidden_dropout_probs: list, attention_dropout_probs: list, classifier_dropout_probs: list, args) -> Tuple[float, Tuple[float, float, float]]:
     """
     Wrapper function to run a grid search over the dropout probabilities of the teacher BERT model.
 
@@ -319,14 +321,14 @@ def run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs,
                         best_f1 = f1
                         best_dropout_combination = current_dropout_combination
                         logger.info(f"New best dropout combination: {best_dropout_combination}\n"
-                                    f"New best f1 score: {best_f1}")
+                                    f"New best f1 score: {best_f1:.3f}")
                         updated_best_combination = True
                     logger.info(f"Finished current iteration.\n")
                 except Exception as e:
                     logger.error(f"Error with dropout combination {current_dropout_combination}: {e}.")
                 if not updated_best_combination:
                     best_dropout_combination = current_dropout_combination
-    logger.info(f'Finished grid-search, best f1 score found at {best_f1} for combination {best_dropout_combination}.')
+    logger.info(f'Finished grid-search, best f1 score found at {best_f1:.3f} for combination {best_dropout_combination}.')
     return best_f1, best_dropout_combination
 
 
@@ -344,8 +346,8 @@ def main(args):
 
     # define dropout probabilities for grid search
     hidden_dropout_probs = [0.1, 0.2, 0.3]
-    attention_dropout_probs = [0.1, 0.2, 0.3]
-    classifier_dropout_probs = [0.1, 0.2, 0.3]
+    attention_dropout_probs = [0.05, 0.2, 0.35]
+    classifier_dropout_probs = [0.05, 0.2, 0.35]
 
     best_f1, best_dropout_combination = run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs, classifier_dropout_probs, args)
 
@@ -379,7 +381,7 @@ def main(args):
                                    max_length=args.max_length, mc_dropout_inference=args.mc_dropout_inference,
                                    save_model=True)
         f1 = eval_metrics['f1_score']
-        logger.info(f"Final f1 score of best model configuration: {f1}")
+        logger.info(f"Final f1 score of best model configuration: {f1:.3f}")
     if args.cleanup:
         for directory in os.listdir("."):
             if os.path.isdir(directory) and directory.startswith("temp"):
