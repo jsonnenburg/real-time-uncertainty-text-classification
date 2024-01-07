@@ -1,13 +1,15 @@
 #!/bin/bash
-#SBATCH --job-name=rtuq_bert_teacher_grid_search
+#SBATCH --job-name=rtuq-bert-teacher-grid-search
+#SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --mem=32G
-#SBATCH --output=bert_finetune_%j.out  # adapt
-#SBATCH --error=bert_finetune_%j.err
+#SBATCH --output=bert_finetune_%j.out
+#SBATCH --time=60:00:00
 
-module load python/3.8 # needed?
-module load cuda
-source ~/myenv/bin/activate # change
+conda activate ml
 
+export PYTHONPATH="/vol/fob-vol1/nebenf23/real-time-uncertainty-text-classification/"
 
-python bert_finetune.py --input_data_dir ./data/preprocessed/ --output_dir ./out/ --cleanup False
+python train_bert_teacher.py --input_data_dir data/robustness_study/preprocessed --output_dir training/out/bert_teacher  \
+--learning_rate 0.00002 --batch_size 32 --epochs 3 --max_length 48 --mc_dropout_inference --seed 42 \
+--save_datasets --cleanup
