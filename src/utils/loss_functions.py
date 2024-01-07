@@ -2,13 +2,15 @@ import tensorflow as tf
 
 
 def null_loss(y_true, y_pred) -> tf.Tensor:
+    """
+    Null loss function (dummy loss) for fine-tuning the custom aleatoric uncertainty BERT models.
+    """
     return tf.zeros_like(y_true)
 
 
 def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
     """
     Aleatoric uncertainty loss function from Kendall & Gal (2017) for fine-tuning the teacher model.
-    Does not require ground truth variance.
     """
     if not isinstance(y_pred, dict) or 'logits' not in y_pred or 'log_variances' not in y_pred:
         raise ValueError("y_pred must be a dictionary with 'logits' and 'log_variances' keys.")
@@ -59,11 +61,3 @@ def shen_loss(y_true, y_pred) -> tf.Tensor:
         return tf.reduce_mean(Ltotal)
     except KeyError:
         raise KeyError("y_true must be a dict with keys 'labels' and 'predictions'.")
-
-
-# shen loss function - implementation for classification in pytorch
-# def shen_loss(y_true, y_pred):
-#    Ls = K.mean(0.5*K.exp(-y_pred[:,1]) * K.pow(y_true[:,0] - y_pred[:,0],2) + 0.5*y_pred[:,1])
-#    Lt = K.abs(y_true[:,0] - y_pred[:,0])
-#    L = Ls + Lt
-#    return K.mean(L)
