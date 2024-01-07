@@ -66,6 +66,7 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
         mean_prob_predictions_np = tf.nn.sigmoid(total_mean_logits).numpy().reshape(all_labels.shape)
         mean_class_predictions_np = mean_prob_predictions_np.round(0).astype(int)
         mean_variances_np = np.array(total_mean_variances).reshape(all_labels.shape)
+        total_uncertainties_np = np.array(total_uncertainties).reshape(all_labels.shape)
         labels_np = all_labels
 
         sigmoid_logits = tf.nn.sigmoid(total_logits)
@@ -81,14 +82,14 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
         bs = brier_score(labels_np, mean_prob_predictions_np)
         avg_entropy = avg_entropy
         ece = ece_score(labels_np, mean_class_predictions_np, mean_prob_predictions_np)
-        tu = total_uncertainties
         metrics = {
             "logits": total_logits.tolist(),
             "probs": total_probs.tolist(),
-            "variance": mean_variances_np.tolist(),
             "y_true": labels_np.astype(int).tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
+            "variance": mean_variances_np.tolist(),
+            "total_uncertainty": total_uncertainties_np.tolist(),
             "average_inference_time": serialize_metric(average_inference_time),
             "accuracy_score": serialize_metric(acc),
             "precision_score": serialize_metric(prec),
@@ -98,7 +99,6 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
             "brier_score": serialize_metric(bs),
             "avg_pred_entropy_score": serialize_metric(avg_entropy),
             "ece_score": serialize_metric(ece),
-            "total_uncertainty": tu
         }
         return metrics
 

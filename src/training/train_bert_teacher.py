@@ -69,7 +69,6 @@ def compute_metrics(model, eval_data):
         f1 = f1_score(labels_np, class_predictions_np)
         nll = nll_score(labels_np, prob_predictions_np)
         bs = brier_score(labels_np, prob_predictions_np)
-        # avg_entropy = np.mean(pred_entropy_score(prob_predictions_np))
         ece = ece_score(labels_np, class_predictions_np, prob_predictions_np)
         return {
             "y_true": labels_np.tolist(),
@@ -83,14 +82,13 @@ def compute_metrics(model, eval_data):
             "f1_score": serialize_metric(f1),
             "nll_score": serialize_metric(nll),
             "brier_score": serialize_metric(bs),
-            # "avg_pred_entropy_score": serialize_metric(avg_entropy),
             "ece_score": serialize_metric(ece)
         }
     else:
         logger.error("Metrics could not be computed successfully.")
 
 
-def compute_mc_dropout_metrics(model, eval_data, n=20):
+def compute_mc_dropout_metrics(model, eval_data, n=20) -> dict:
     total_logits = []
     total_mean_variances = []  # mean of the variances (log variance predictor output) over the MC samples
     total_mean_logits = []  # mean of the logits (classifier output) over the MC samples
@@ -120,6 +118,7 @@ def compute_mc_dropout_metrics(model, eval_data, n=20):
         mean_prob_predictions_np = tf.nn.sigmoid(total_mean_logits).numpy().reshape(all_labels.shape)
         mean_class_predictions_np = mean_prob_predictions_np.round(0).astype(int)
         mean_variances_np = np.array(total_mean_variances).reshape(all_labels.shape)
+        total_uncertainties_np = np.array(total_uncertainties).reshape(all_labels.shape)
         labels_np = all_labels
 
         sigmoid_logits = tf.nn.sigmoid(total_logits)
@@ -133,14 +132,13 @@ def compute_mc_dropout_metrics(model, eval_data, n=20):
         f1 = f1_score(labels_np, mean_class_predictions_np)
         nll = nll_score(labels_np, mean_prob_predictions_np)
         bs = brier_score(labels_np, mean_prob_predictions_np)
-        avg_entropy = avg_entropy
         ece = ece_score(labels_np, mean_class_predictions_np, mean_prob_predictions_np)
-        tu = total_uncertainties
         return {
             "y_true": labels_np.tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
             "variance": mean_variances_np.tolist(),
+            "total_uncertainty": total_uncertainties_np.tolist(),
             "average_inference_time": serialize_metric(average_inference_time),
             "accuracy_score": serialize_metric(acc),
             "precision_score": serialize_metric(prec),
@@ -150,7 +148,6 @@ def compute_mc_dropout_metrics(model, eval_data, n=20):
             "brier_score": serialize_metric(bs),
             "avg_pred_entropy_score": serialize_metric(avg_entropy),
             "ece_score": serialize_metric(ece),
-            "total_uncertainty": tu
         }
     else:
         logger.error("MC dropout metrics could not be computed successfully.")
@@ -287,7 +284,7 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
     if mc_dropout_inference:
         logger.info("Computing MC dropout metrics.")
         mc_dropout_metrics = compute_mc_dropout_metrics(model, eval_data)
-        with open(os.path.join(paths['results_dir'], 'mc_dropout_metrics.json'), 'w') as f:
+        with open(os.path.join(paths['results_dir'], 'mc_dropout_results.json'), 'w') as f:
             json.dump(mc_dropout_metrics, f)
         logger.info(
             f"\n==== Classification report  (MC dropout) ====\n {classification_report(mc_dropout_metrics['y_true'], mc_dropout_metrics['y_pred'])}")
