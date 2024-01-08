@@ -12,7 +12,7 @@ import logging
 from sklearn.metrics import classification_report
 from keras.callbacks import TensorBoard
 
-from logger_config import setup_logging
+from src.utils.logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
 from src.training.train_bert_teacher import serialize_metric
@@ -193,6 +193,8 @@ def main(args):
         json.dump(metrics, f)
     logger.info(
         f"\n==== Classification report  (MC dropout) ====\n {classification_report(metrics['y_true'], metrics['y_pred'])}")
+    f1 = metrics['f1_score']
+    logger.info(f"Final f1 score of distilled student model: {f1:.3f}")
 
     logger.info("MC dropout metrics successfully computed and saved.")
 

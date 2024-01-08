@@ -13,7 +13,7 @@ import tensorflow as tf
 from keras.callbacks import TensorBoard
 from sklearn.metrics import classification_report
 
-from logger_config import setup_logging
+from src.utils.logger_config import setup_logging
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess, get_tf_dataset
 
@@ -341,7 +341,11 @@ def main(args):
     tf.random.set_seed(args.seed)
 
     data_loader = SimpleDataLoader(dataset_dir=args.input_data_dir)
-    data_loader.load_dataset()
+    try:
+        data_loader.load_dataset()
+    except FileNotFoundError:
+        logger.error("No dataset found.")
+        raise
     dataset = data_loader.get_dataset()
 
     # define dropout probabilities for grid search
@@ -370,6 +374,7 @@ def main(args):
             combined_dataset.train.to_csv(os.path.join(data_dir, 'combined_train.csv'), sep='\t')
             combined_dataset.test.to_csv(os.path.join(data_dir, 'combined_test.csv'), sep='\t')
 
+    trained_best_model = False
     if best_dropout_combination is None:
         logger.error("No best dropout combination saved.")
     else:
@@ -380,9 +385,11 @@ def main(args):
                                    batch_size=args.batch_size, learning_rate=args.learning_rate, epochs=args.epochs,
                                    max_length=args.max_length, mc_dropout_inference=args.mc_dropout_inference,
                                    save_model=True)
+        if eval_metrics is not None:
+            trained_best_model = True
         f1 = eval_metrics['f1_score']
         logger.info(f"Final f1 score of best model configuration: {f1:.3f}")
-    if args.cleanup:
+    if args.cleanup and trained_best_model:
         for directory in os.listdir("."):
             if os.path.isdir(directory) and directory.startswith("temp"):
                 shutil.rmtree(directory)
