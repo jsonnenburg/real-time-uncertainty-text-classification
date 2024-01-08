@@ -266,7 +266,7 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
     if not save_model:
         files = os.listdir(paths['model_dir'])
         for file in files:
-            if file.startswith('cp.'):
+            if file.startswith('cp-'):
                 os.remove(os.path.join(paths['model_dir'], file))
 
     eval_data = val_data if val_data is not None else test_data
