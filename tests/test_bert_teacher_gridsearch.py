@@ -9,7 +9,7 @@ import shutil
 import logging
 import pandas as pd
 
-from logger_config import setup_logging
+from src.utils.logger_config import setup_logging
 
 from src.models.bert_model import create_bert_config
 from src.training.train_bert_teacher import run_bert_grid_search, train_model, setup_config_directories
@@ -86,7 +86,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--save_datasets', action='store_true')
-    parser.add_argument('--cleanup', type=bool, default=False, help='Remove all subdirectories with temp prefix from output dir.')
+    parser.add_argument('--cleanup', action='store_true', help='Remove all subdirectories with temp prefix from output dir.')
     args = parser.parse_args()
 
     log_dir = os.path.join(args.output_dir, 'logs')
