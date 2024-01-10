@@ -106,8 +106,8 @@ def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
         for i in range(m):
             tf.random.set_seed(seed_list[i])
             outputs = model(features, training=True)
-            logits = outputs['logits']
-            log_variances = outputs['log_variances']
+            logits = outputs.logits
+            log_variances = outputs.log_variances
             all_logits.append(logits)
             all_log_variances.append(log_variances)
 
@@ -117,7 +117,7 @@ def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
 
         # sigma_hat_sq = tf.math.reduce_variance(all_logits, axis=0)
         sigma_hat = tf.sqrt(tf.exp(all_log_variances))
-        sigma_tilde = tf.reduce_mean(sigma_hat, axis=1)
+        sigma_tilde = tf.reduce_mean(sigma_hat, axis=0)
         sigma_tilde_reshaped = tf.reshape(sigma_tilde, [1, -1, 1])  # reshape to (1, batch_size, 1)
 
         eps = tf.random.normal(shape=[k, mu_t.shape[1], mu_t.shape[2]])  # what should the shape be? (k, batch_size, num_classes)
