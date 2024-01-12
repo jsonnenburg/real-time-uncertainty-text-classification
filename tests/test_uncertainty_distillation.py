@@ -27,9 +27,58 @@ import tensorflow as tf
 logger = logging.getLogger()
 
 
+def compute_student_metrics(model, eval_data):
+    total_logits = []
+    total_log_variances = []
+    total_labels = []
+
+    # iterate over all batches in eval_data
+    start_time = time.time()
+    for batch in eval_data:
+        features, (labels, predictions) = batch
+        outputs = model(features, training=False)
+        total_logits.extend(outputs.logits)
+        total_log_variances.extend(outputs.log_variances)
+        total_labels.extend(labels.numpy())
+    total_time = time.time() - start_time
+    average_inference_time = total_time / len(total_labels) * 1000
+    logger.info(f"Average inference time per sample: {average_inference_time:.0f} milliseconds.")
+
+    all_labels = np.array(total_labels)
+
+    if total_logits is not None and total_labels is not None:
+        prob_predictions_np = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
+        class_predictions_np = prob_predictions_np.round(0).astype(int)
+        variances = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
+        labels_np = all_labels
+
+        acc = accuracy_score(labels_np, class_predictions_np)
+        prec = precision_score(labels_np, class_predictions_np)
+        rec = recall_score(labels_np, class_predictions_np)
+        f1 = f1_score(labels_np, class_predictions_np)
+        nll = nll_score(labels_np, prob_predictions_np)
+        bs = brier_score(labels_np, prob_predictions_np)
+        ece = ece_score(labels_np, class_predictions_np, prob_predictions_np)
+        return {
+            "y_true": labels_np.tolist(),
+            "y_pred": class_predictions_np.tolist(),
+            "y_prob": prob_predictions_np.tolist(),
+            "variance": variances.tolist(),
+            "average_inference_time": serialize_metric(average_inference_time),
+            "accuracy_score": serialize_metric(acc),
+            "precision_score": serialize_metric(prec),
+            "recall_score": serialize_metric(rec),
+            "f1_score": serialize_metric(f1),
+            "nll_score": serialize_metric(nll),
+            "brier_score": serialize_metric(bs),
+            "ece_score": serialize_metric(ece)
+        }
+    else:
+        logger.error("Metrics could not be computed successfully.")
+
+
 def compute_student_mc_dropout_metrics(model, eval_data, n):
     total_logits = []
-    total_probs = []
     total_mean_logits = []
     total_mean_variances = []
     total_variances = []
@@ -42,24 +91,21 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
         features, (labels, predictions) = batch
         outputs = model.cached_mc_dropout_predict(features, n=n)
         logits = outputs['logits']
-        probs = outputs['probs']
         mean_predictions = outputs['mean_predictions']
         mean_variances = outputs['mean_variances']
         var_predictions = outputs['var_predictions']
         total_uncertainty = outputs['total_uncertainty']
         total_logits.append(logits.numpy())
-        total_probs.append(probs.numpy())
         total_mean_logits.extend(mean_predictions.numpy())
         total_mean_variances.extend(mean_variances.numpy())
         total_variances.extend(var_predictions.numpy())
         total_uncertainties.extend(total_uncertainty.numpy())
         total_labels.extend(labels.numpy())
     total_time = time.time() - start_time
-    average_inference_time = total_time / len(total_labels)
-    logger.info(f"Average inference time per sample: {average_inference_time:.4f} seconds.")
+    average_inference_time = total_time / len(total_labels) * 1000
+    logger.info(f"Average inference time per sample: {average_inference_time:.0f} milliseconds.")
 
     total_logits = np.concatenate(total_logits, axis=1)  # concatenate along the batch dimension
-    total_probs = np.concatenate(total_probs, axis=1)
 
     if total_mean_logits and total_labels:
         all_labels = np.array(total_labels)
@@ -83,8 +129,6 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
         avg_entropy = avg_entropy
         ece = ece_score(labels_np, mean_class_predictions_np, mean_prob_predictions_np)
         metrics = {
-            # "logits": total_logits.tolist(),
-            # "probs": total_probs.tolist(),
             "y_true": labels_np.astype(int).tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
@@ -140,8 +184,14 @@ def main(args):
     with open(os.path.join(model_dir, 'config.json'), 'w') as f:
         json.dump(model_config_info, f)
 
+    if args.epistemic_only:
+        logger.info('Distilling epistemic uncertainty only.')
+        data_dir = os.path.join(args.transfer_data_dir, 'epistemic_only', f'm{args.m}')
+    else:
+        logger.info('Distilling both epistemic and aleatoric uncertainty.')
+        data_dir = os.path.join(args.transfer_data_dir, 'aleatoric_and_epistemic', f'm{args.m}_k{args.k}')
+
     dataset = Dataset()
-    data_dir = os.path.join(args.transfer_data_dir, f'm{args.m}_k{args.k}')
     dataset.train = pd.read_csv(os.path.join(data_dir, 'transfer_train.csv'), sep='\t')
     dataset.test = pd.read_csv(os.path.join(data_dir, 'transfer_test.csv'), sep='\t')
 
@@ -169,13 +219,14 @@ def main(args):
     test_data = transfer_get_tf_dataset(tokenized_dataset, 'test')
     test_data = test_data.batch(args.batch_size).cache().prefetch(tf.data.AUTOTUNE)
 
-    checkpoint_path = os.path.join(args.teacher_model_save_dir, 'cp-{epoch:02d}.ckpt')
-    checkpoint_dir = os.path.dirname(checkpoint_path)
-    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
-    if latest_checkpoint:
-        student_model.load_weights(latest_checkpoint)
-        logger.info(f"Found model checkpoint, loaded weights from {latest_checkpoint}")
+    teacher_checkpoint_path = os.path.join(args.teacher_model_save_dir, 'cp-{epoch:02d}.ckpt')
+    teacher_checkpoint_dir = os.path.dirname(teacher_checkpoint_path)
+    latest_teacher_checkpoint = tf.train.latest_checkpoint(teacher_checkpoint_dir)
+    if latest_teacher_checkpoint:
+        student_model.load_weights(latest_teacher_checkpoint)
+        logger.info(f"Found teacher model files, loaded weights from {latest_teacher_checkpoint}")
 
+    checkpoint_path = os.path.join(model_dir, 'cp-{epoch:02d}.ckpt')
     cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                                      save_weights_only=True,
                                                      verbose=1)
@@ -186,17 +237,31 @@ def main(args):
 
     history_callback = HistorySaver(file_path=os.path.join(log_dir, 'student_uncertainty_distillation_log.txt'))
 
-    student_model.fit(
-        train_data,
-        validation_data=val_data if val_data is not None else test_data,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        callbacks=[cp_callback, tensorboard_callback, history_callback]
-    )
-    logger.info('Finished fine-tuning.')
+    # if we have a checkpoint for max epoch , load it and skip training
+    latest_checkpoint = tf.train.latest_checkpoint(model_dir)
+    if latest_checkpoint:
+        student_model.load_weights(latest_checkpoint)
+        logger.info(f"Found student model files, loaded weights from {latest_checkpoint}")
+        logger.info('Skipping training.')
+    else:
+        logger.info('Starting fine-tuning...')
+        student_model.fit(
+            train_data,
+            validation_data=val_data if val_data is not None else test_data,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            callbacks=[cp_callback, tensorboard_callback, history_callback]
+        )
+        logger.info('Finished fine-tuning.')
 
     result_dir = os.path.join(args.output_dir, 'results')
     os.makedirs(result_dir, exist_ok=True)
+
+    # weight averaging predictions on eval set
+    eval_metrics = compute_student_metrics(student_model, test_data)
+    with open(os.path.join(result_dir, 'eval_results.json'), 'w') as f:
+        json.dump(eval_metrics, f)
+    logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
 
     # obtain "cached" MC dropout predictions on eval set
     logger.info('Computing MC dropout metrics...')
@@ -205,6 +270,8 @@ def main(args):
         json.dump(metrics, f)
     logger.info(
         f"\n==== Classification report  (MC dropout) ====\n {classification_report(metrics['y_true'], metrics['y_pred'])}")
+    f1 = metrics['f1_score']
+    logger.info(f"Final f1 score of distilled student model: {f1:.3f}")
 
     logger.info("MC dropout metrics successfully computed and saved.")
 
@@ -215,15 +282,21 @@ if __name__ == '__main__':
     parser.add_argument('--teacher_model_save_dir', type=str)
     parser.add_argument('--m', type=int, default=5, help="Transfer sampling param to know which dataset to use.")
     parser.add_argument('--k', type=int, default=10, help="Transfer sampling param to know which dataset to use.")
+    parser.add_argument('--epistemic_only', action='store_true')  # if true, only model epistemic uncertainty, else also model aleatoric uncertainty
     parser.add_argument('--learning_rate', type=float, default=2e-5)
-    parser.add_argument('--batch_size', type=int, default=16)  # Reduced for testing
-    parser.add_argument('--epochs', type=int, default=1)  # Reduced for testing
+    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--epochs', type=int, default=3)
     parser.add_argument('--max_length', type=int, default=48)
     parser.add_argument('--n', type=int, default=20, help="Number of MC dropout samples to compute for student MCD metrics.")
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
 
+    if args.epistemic_only:
+        args.output_dir = os.path.join(args.output_dir, 'epistemic_only', f'm{args.m}')
+    else:
+        args.output_dir = os.path.join(args.output_dir, 'aleatoric_and_epistemic', f'm{args.m}_k{args.k}')
+    os.makedirs(args.output_dir, exist_ok=True)
     log_dir = os.path.join(args.output_dir, 'logs')
     os.makedirs(log_dir, exist_ok=True)
     log_file_path = os.path.join(log_dir, 'student_uncertainty_distillation_log.txt')

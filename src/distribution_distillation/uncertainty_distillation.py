@@ -27,6 +27,56 @@ import tensorflow as tf
 logger = logging.getLogger()
 
 
+def compute_student_metrics(model, eval_data):
+    total_logits = []
+    total_log_variances = []
+    total_labels = []
+
+    # iterate over all batches in eval_data
+    start_time = time.time()
+    for batch in eval_data:
+        features, (labels, predictions) = batch
+        outputs = model(features, training=False)
+        total_logits.extend(outputs.logits)
+        total_log_variances.extend(outputs.log_variances)
+        total_labels.extend(labels.numpy())
+    total_time = time.time() - start_time
+    average_inference_time = total_time / len(total_labels) * 1000
+    logger.info(f"Average inference time per sample: {average_inference_time:.0f} milliseconds.")
+
+    all_labels = np.array(total_labels)
+
+    if total_logits is not None and total_labels is not None:
+        prob_predictions_np = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
+        class_predictions_np = prob_predictions_np.round(0).astype(int)
+        variances = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
+        labels_np = all_labels
+
+        acc = accuracy_score(labels_np, class_predictions_np)
+        prec = precision_score(labels_np, class_predictions_np)
+        rec = recall_score(labels_np, class_predictions_np)
+        f1 = f1_score(labels_np, class_predictions_np)
+        nll = nll_score(labels_np, prob_predictions_np)
+        bs = brier_score(labels_np, prob_predictions_np)
+        ece = ece_score(labels_np, class_predictions_np, prob_predictions_np)
+        return {
+            "y_true": labels_np.tolist(),
+            "y_pred": class_predictions_np.tolist(),
+            "y_prob": prob_predictions_np.tolist(),
+            "variance": variances.tolist(),
+            "average_inference_time": serialize_metric(average_inference_time),
+            "accuracy_score": serialize_metric(acc),
+            "precision_score": serialize_metric(prec),
+            "recall_score": serialize_metric(rec),
+            "f1_score": serialize_metric(f1),
+            "nll_score": serialize_metric(nll),
+            "brier_score": serialize_metric(bs),
+            "ece_score": serialize_metric(ece)
+        }
+    else:
+        logger.error("Metrics could not be computed successfully.")
+
+
 def compute_student_mc_dropout_metrics(model, eval_data, n):
     total_logits = []
     total_mean_logits = []
@@ -202,7 +252,7 @@ def main(args):
     os.makedirs(result_dir, exist_ok=True)
 
     # weight averaging predictions on eval set
-    eval_metrics = compute_metrics(student_model, test_data)
+    eval_metrics = compute_student_metrics(student_model, test_data)
     with open(os.path.join(result_dir, 'eval_results.json'), 'w') as f:
         json.dump(eval_metrics, f)
     logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
