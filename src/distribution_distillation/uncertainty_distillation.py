@@ -15,7 +15,7 @@ from keras.callbacks import TensorBoard
 from src.utils.logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
-from src.training.train_bert_teacher import serialize_metric
+from src.training.train_bert_teacher import serialize_metric, compute_metrics
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
 from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, nll_score, brier_score,
@@ -134,8 +134,14 @@ def main(args):
     with open(os.path.join(model_dir, 'config.json'), 'w') as f:
         json.dump(model_config_info, f)
 
+    if args.epistemic_only:
+        logger.info('Distilling epistemic uncertainty only.')
+        data_dir = os.path.join(args.transfer_data_dir, 'epistemic_only', f'm{args.m}')
+    else:
+        logger.info('Distilling both epistemic and aleatoric uncertainty.')
+        data_dir = os.path.join(args.transfer_data_dir, 'aleatoric_and_epistemic', f'm{args.m}_k{args.k}')
+
     dataset = Dataset()
-    data_dir = os.path.join(args.transfer_data_dir, f'm{args.m}_k{args.k}')
     dataset.train = pd.read_csv(os.path.join(data_dir, 'transfer_train.csv'), sep='\t')
     dataset.test = pd.read_csv(os.path.join(data_dir, 'transfer_test.csv'), sep='\t')
 
@@ -157,13 +163,14 @@ def main(args):
     test_data = transfer_get_tf_dataset(tokenized_dataset, 'test')
     test_data = test_data.batch(args.batch_size).cache().prefetch(tf.data.AUTOTUNE)
 
-    checkpoint_path = os.path.join(args.teacher_model_save_dir, 'cp-{epoch:02d}.ckpt')
-    checkpoint_dir = os.path.dirname(checkpoint_path)
-    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
-    if latest_checkpoint:
-        student_model.load_weights(latest_checkpoint)
-        logger.info(f"Found teacher model files, loaded weights from {latest_checkpoint}")
+    teacher_checkpoint_path = os.path.join(args.teacher_model_save_dir, 'cp-{epoch:02d}.ckpt')
+    teacher_checkpoint_dir = os.path.dirname(teacher_checkpoint_path)
+    latest_teacher_checkpoint = tf.train.latest_checkpoint(teacher_checkpoint_dir)
+    if latest_teacher_checkpoint:
+        student_model.load_weights(latest_teacher_checkpoint)
+        logger.info(f"Found teacher model files, loaded weights from {latest_teacher_checkpoint}")
 
+    checkpoint_path = os.path.join(model_dir, 'cp-{epoch:02d}.ckpt')
     cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                                      save_weights_only=True,
                                                      verbose=1)
@@ -174,17 +181,31 @@ def main(args):
 
     history_callback = HistorySaver(file_path=os.path.join(log_dir, 'student_uncertainty_distillation_log.txt'))
 
-    student_model.fit(
-        train_data,
-        validation_data=val_data if val_data is not None else test_data,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        callbacks=[cp_callback, tensorboard_callback, history_callback]
-    )
-    logger.info('Finished fine-tuning.')
+    # if we have a checkpoint for max epoch , load it and skip training
+    latest_checkpoint = tf.train.latest_checkpoint(model_dir)
+    if latest_checkpoint:
+        student_model.load_weights(latest_checkpoint)
+        logger.info(f"Found student model files, loaded weights from {latest_checkpoint}")
+        logger.info('Skipping training.')
+    else:
+        logger.info('Starting fine-tuning...')
+        student_model.fit(
+            train_data,
+            validation_data=val_data if val_data is not None else test_data,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            callbacks=[cp_callback, tensorboard_callback, history_callback]
+        )
+        logger.info('Finished fine-tuning.')
 
     result_dir = os.path.join(args.output_dir, 'results')
     os.makedirs(result_dir, exist_ok=True)
+
+    # weight averaging predictions on eval set
+    eval_metrics = compute_metrics(student_model, test_data)
+    with open(os.path.join(result_dir, 'eval_results.json'), 'w') as f:
+        json.dump(eval_metrics, f)
+    logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
 
     # obtain "cached" MC dropout predictions on eval set
     logger.info('Computing MC dropout metrics...')
@@ -205,6 +226,7 @@ if __name__ == '__main__':
     parser.add_argument('--teacher_model_save_dir', type=str)
     parser.add_argument('--m', type=int, default=5, help="Transfer sampling param to know which dataset to use.")
     parser.add_argument('--k', type=int, default=10, help="Transfer sampling param to know which dataset to use.")
+    parser.add_argument('--epistemic_only', action='store_true')  # if true, only model epistemic uncertainty, else also model aleatoric uncertainty
     parser.add_argument('--learning_rate', type=float, default=2e-5)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--epochs', type=int, default=3)
@@ -214,6 +236,11 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
 
+    if args.epistemc_only:
+        args.output_dir = os.path.join(args.output_dir, 'epistemic_only', f'm{args.m}')
+    else:
+        args.output_dir = os.path.join(args.output_dir, 'aleatoric_and_epistemic', f'm{args.m}_k{args.k}')
+    os.makedirs(args.output_dir, exist_ok=True)
     log_dir = os.path.join(args.output_dir, 'logs')
     os.makedirs(log_dir, exist_ok=True)
     log_file_path = os.path.join(log_dir, 'student_uncertainty_distillation_log.txt')
