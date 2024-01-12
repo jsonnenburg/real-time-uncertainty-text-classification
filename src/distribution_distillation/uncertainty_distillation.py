@@ -236,7 +236,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
 
-    if args.epistemc_only:
+    if args.epistemic_only:
         args.output_dir = os.path.join(args.output_dir, 'epistemic_only', f'm{args.m}')
     else:
         args.output_dir = os.path.join(args.output_dir, 'aleatoric_and_epistemic', f'm{args.m}_k{args.k}')
