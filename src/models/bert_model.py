@@ -106,9 +106,7 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
 
         return {m.name: m.result() for m in self.metrics}
 
-    def cached_mc_dropout_predict(self, inputs, n=20, dropout_rate=0.1) -> dict:
-        self.dropout = tf.keras.layers.Dropout(dropout_rate)
-
+    def cached_mc_dropout_predict(self, inputs, n=20) -> dict:
         bert_outputs = self.bert(inputs, training=False)
         pooled_output = bert_outputs.pooler_output
 
@@ -131,13 +129,17 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
         mean_predictions = tf.reduce_mean(all_logits, axis=0)
         var_predictions = tf.math.reduce_variance(all_logits, axis=0)
 
-        # TODO: validate that this works as intended
+        epistemic_uncertainty, aleatoric_uncertainty, total_uncertainty = compute_total_uncertainty(all_logits,
+                                                                                                    all_log_variances)
+        mean_variances = aleatoric_uncertainty
 
         return {'logits': all_logits,
                 'probs': all_probs,
                 'log_variances': all_log_variances,
                 'mean_predictions': mean_predictions,
+                'mean_variances': mean_variances,
                 'var_predictions': var_predictions,
+                'total_uncertainty': total_uncertainty,
                 }
 
     def get_config(self):
