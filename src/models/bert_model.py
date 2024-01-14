@@ -94,7 +94,7 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
     def test_step(self, data):
         x, y = data
 
-        y_pred = self.call(x, training=False)
+        y_pred = self(x, training=False)
         if not isinstance(y_pred, CustomTFSequenceClassifierOutput):
             raise TypeError("The output of the model is not CustomTFSequenceClassifierOutput.")
         if self.custom_loss_fn is not None:

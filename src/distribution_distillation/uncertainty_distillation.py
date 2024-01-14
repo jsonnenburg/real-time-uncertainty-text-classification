@@ -279,6 +279,7 @@ if __name__ == '__main__':
     parser.add_argument('--m', type=int, default=5, help="Transfer sampling param to know which dataset to use.")
     parser.add_argument('--k', type=int, default=10, help="Transfer sampling param to know which dataset to use.")
     parser.add_argument('--epistemic_only', action='store_true')  # if true, only model epistemic uncertainty, else also model aleatoric uncertainty
+    parser.add_argument('--version_identifer', type=str, default=None, help="Version identifier for output dir.")
     parser.add_argument('--learning_rate', type=float, default=2e-5)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--epochs', type=int, default=3)
@@ -292,6 +293,9 @@ if __name__ == '__main__':
         args.output_dir = os.path.join(args.output_dir, 'epistemic_only', f'm{args.m}')
     else:
         args.output_dir = os.path.join(args.output_dir, 'aleatoric_and_epistemic', f'm{args.m}_k{args.k}')
+    if args.version_identifer is not None:
+        # append version identifier to output dir (e.g., for experiments with different hyperparameters)
+        args.output_dir = os.path.join(args.output_dir, args.version_identifer)
     os.makedirs(args.output_dir, exist_ok=True)
     log_dir = os.path.join(args.output_dir, 'logs')
     os.makedirs(log_dir, exist_ok=True)

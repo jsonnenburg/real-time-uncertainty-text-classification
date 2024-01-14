@@ -53,6 +53,7 @@ def pred_entropy_score(y_probs):
 
 
 def ece_score(y_true, y_pred, y_prob, n_bins=10):
+    # default bin size, following Ovadia et al. (2019)
     y_true = np.squeeze(y_true)
     bin_limits = np.linspace(0, 1, n_bins + 1)
     bin_lowers = bin_limits[:-1]

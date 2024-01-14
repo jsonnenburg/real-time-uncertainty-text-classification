@@ -353,6 +353,8 @@ def main(args):
     attention_dropout_probs = [0.05, 0.2, 0.35]
     classifier_dropout_probs = [0.05, 0.2, 0.35]
 
+    # TODO: if best model is already trained and saved, skip grid search and just load best model -> useful to recompute metrics if needed
+
     best_f1, best_dropout_combination = run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs, classifier_dropout_probs, args)
 
     # Retrain the best model on the combination of train and validation set
