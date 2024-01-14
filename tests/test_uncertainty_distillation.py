@@ -12,6 +12,7 @@ import logging
 from sklearn.metrics import classification_report
 from keras.callbacks import TensorBoard
 
+from src.distribution_distillation.uncertainty_distillation import get_predictive_distributions
 from src.utils.logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset, \
     bert_preprocess, get_tf_dataset
@@ -277,6 +278,33 @@ def main(args):
 
     logger.info("MC dropout metrics successfully computed and saved.")
 
+    if args.save_predictive_distributions:
+        logger.info('Computing and saving predictive distributions...')
+        logger.info('Initializing teacher model...')
+        config = create_bert_config(teacher_config['hidden_dropout_prob'],
+                                    teacher_config['attention_probs_dropout_prob'],
+                                    teacher_config['classifier_dropout'])
+        teacher_model = AleatoricMCDropoutBERT(config, custom_loss_fn=shen_loss)
+        teacher_model.compile(
+            optimizer=optimizer,
+            loss={'classifier': shen_loss, 'log_variance': null_loss},
+            metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
+            run_eagerly=True
+        )
+        teacher_model.load_weights(latest_teacher_checkpoint).expect_partial()
+        logger.info(f"Found teacher model files, loaded weights from {latest_teacher_checkpoint}")
+        logger.info('Teacher model initialized.')
+        t_pred_dist_info, s_pred_dist_info = get_predictive_distributions(teacher_model,
+                                                                          student_model,
+                                                                          eval_data=test_data,
+                                                                          n=args.n,
+                                                                          num_samples=args.predictive_distribution_samples)
+        with open(os.path.join(result_dir, 'teacher_predictive_distribution_info.json'), 'w') as f:
+            json.dump(t_pred_dist_info, f)
+        with open(os.path.join(result_dir, 'student_predictive_distribution_info.json'), 'w') as f:
+            json.dump(s_pred_dist_info, f)
+        logger.info('Predictive distributions successfully computed and saved.')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -285,6 +313,9 @@ if __name__ == '__main__':
     parser.add_argument('--m', type=int, default=5, help="Transfer sampling param to know which dataset to use.")
     parser.add_argument('--k', type=int, default=10, help="Transfer sampling param to know which dataset to use.")
     parser.add_argument('--epistemic_only', action='store_true')  # if true, only model epistemic uncertainty, else also model aleatoric uncertainty
+    parser.add_argument('--save_predictive_distributions', action='store_true')
+    parser.add_argument('--predictive_distribution_samples', type=int, default=500,
+                        help="Number of samples to draw from predictive distribution.")
     parser.add_argument('--learning_rate', type=float, default=2e-5)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--epochs', type=int, default=3)

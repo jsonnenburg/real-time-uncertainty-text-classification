@@ -22,6 +22,7 @@ from src.utils.data import Dataset
 from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, nll_score, brier_score,
                                pred_entropy_score, ece_score)
 from src.utils.training import HistorySaver
+from src.distribution_distillation.predictive_distribution import get_student_predictive_distribution_info, get_teacher_predictive_distribution_info
 
 import tensorflow as tf
 
@@ -148,6 +149,12 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
         return metrics
 
 
+def get_predictive_distributions(teacher, student, eval_data, n=20, num_samples=500):
+    teacher_predictive_distribution_info = get_teacher_predictive_distribution_info(teacher, eval_data, n=n, num_samples=num_samples)
+    student_predictive_distribution_info = get_student_predictive_distribution_info(student, eval_data, n=n, num_samples=num_samples)
+    return teacher_predictive_distribution_info, student_predictive_distribution_info
+
+
 def main(args):
     """
     Student knowledge distillation pipeline. Setup similar to the grid search testing pipeline.
@@ -271,20 +278,54 @@ def main(args):
 
     logger.info("MC dropout metrics successfully computed and saved.")
 
+    if args.save_predictive_distributions:
+        logger.info('Computing and saving predictive distributions...')
+        logger.info('Initializing teacher model...')
+        config = create_bert_config(teacher_config['hidden_dropout_prob'],
+                                    teacher_config['attention_probs_dropout_prob'],
+                                    teacher_config['classifier_dropout'])
+        teacher_model = AleatoricMCDropoutBERT(config, custom_loss_fn=shen_loss)
+        teacher_model.compile(
+            optimizer=optimizer,
+            loss={'classifier': shen_loss, 'log_variance': null_loss},
+            metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
+            run_eagerly=True
+        )
+        teacher_model.load_weights(latest_teacher_checkpoint).expect_partial()
+        logger.info(f"Found teacher model files, loaded weights from {latest_teacher_checkpoint}")
+        logger.info('Teacher model initialized.')
+        t_pred_dist_info, s_pred_dist_info = get_predictive_distributions(teacher_model,
+                                                                          student_model,
+                                                                          eval_data=test_data,
+                                                                          n=args.n,
+                                                                          num_samples=args.predictive_distribution_samples)
+        with open(os.path.join(result_dir, 'teacher_predictive_distribution_info.json'), 'w') as f:
+            json.dump(t_pred_dist_info, f)
+        with open(os.path.join(result_dir, 'student_predictive_distribution_info.json'), 'w') as f:
+            json.dump(s_pred_dist_info, f)
+        logger.info('Predictive distributions successfully computed and saved.')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--transfer_data_dir', type=str)
     parser.add_argument('--teacher_model_save_dir', type=str)
-    parser.add_argument('--m', type=int, default=5, help="Transfer sampling param to know which dataset to use.")
-    parser.add_argument('--k', type=int, default=10, help="Transfer sampling param to know which dataset to use.")
+    parser.add_argument('--m', type=int, default=5,
+                        help="Transfer sampling param to know which dataset to use.")
+    parser.add_argument('--k', type=int, default=10,
+                        help="Transfer sampling param to know which dataset to use.")
     parser.add_argument('--epistemic_only', action='store_true')  # if true, only model epistemic uncertainty, else also model aleatoric uncertainty
-    parser.add_argument('--version_identifer', type=str, default=None, help="Version identifier for output dir.")
+    parser.add_argument('--version_identifer', type=str, default=None,
+                        help="Version identifier for output dir.")
+    parser.add_argument('--save_predictive_distributions', action='store_true')
+    parser.add_argument('--predictive_distribution_samples', type=int, default=500,
+                        help="Number of samples to draw from predictive distribution.")
     parser.add_argument('--learning_rate', type=float, default=2e-5)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--epochs', type=int, default=3)
     parser.add_argument('--max_length', type=int, default=48)
-    parser.add_argument('--n', type=int, default=20, help="Number of MC dropout samples to compute for student MCD metrics.")
+    parser.add_argument('--n', type=int, default=20,
+                        help="Number of MC dropout samples to compute for student MCD metrics.")
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
