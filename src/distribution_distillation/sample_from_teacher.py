@@ -221,6 +221,8 @@ def main(args):
 
     transfer_df_train.to_csv(os.path.join(transfer_data_dir, 'transfer_train.csv'), sep='\t', index=False)
     transfer_df_test.to_csv(os.path.join(transfer_data_dir, 'transfer_test.csv'), sep='\t', index=False)
+    # save original test set as well
+    input_dataset.test.to_csv(os.path.join(transfer_data_dir, 'test.csv'), sep='\t', index=False)
 
 
 if __name__ == '__main__':

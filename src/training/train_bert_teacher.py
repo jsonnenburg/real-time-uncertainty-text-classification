@@ -276,7 +276,7 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
         logger.error("Eval data is not in TensorFlow-conforming dataset format.")
     with open(os.path.join(paths['results_dir'], 'eval_results.json'), 'w') as f:
         json.dump(eval_metrics, f)
-    logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
+    logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'], zero_division=0)}")
 
     if mc_dropout_inference:
         logger.info("Computing MC dropout metrics.")
@@ -284,7 +284,7 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
         with open(os.path.join(paths['results_dir'], 'mc_dropout_results.json'), 'w') as f:
             json.dump(mc_dropout_metrics, f)
         logger.info(
-            f"\n==== Classification report  (MC dropout) ====\n {classification_report(mc_dropout_metrics['y_true'], mc_dropout_metrics['y_pred'])}")
+            f"\n==== Classification report  (MC dropout) ====\n {classification_report(mc_dropout_metrics['y_true'], mc_dropout_metrics['y_pred'], zero_division=0)}")
         return mc_dropout_metrics
 
     return eval_metrics

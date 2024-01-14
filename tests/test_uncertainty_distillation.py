@@ -13,7 +13,8 @@ from sklearn.metrics import classification_report
 from keras.callbacks import TensorBoard
 
 from src.utils.logger_config import setup_logging
-from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset
+from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset, \
+    bert_preprocess, get_tf_dataset
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
 from src.training.train_bert_teacher import serialize_metric
 from src.utils.loss_functions import shen_loss, null_loss
@@ -35,7 +36,7 @@ def compute_student_metrics(model, eval_data):
     # iterate over all batches in eval_data
     start_time = time.time()
     for batch in eval_data:
-        features, (labels, predictions) = batch
+        features, labels = batch
         outputs = model(features, training=False)
         total_logits.extend(outputs.logits)
         total_log_variances.extend(outputs.log_variances)
@@ -88,7 +89,7 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
 
     start_time = time.time()
     for batch in eval_data:
-        features, (labels, predictions) = batch
+        features, labels = batch
         outputs = model.cached_mc_dropout_predict(features, n=n)
         logits = outputs['logits']
         mean_predictions = outputs['mean_predictions']
@@ -193,7 +194,8 @@ def main(args):
 
     dataset = Dataset()
     dataset.train = pd.read_csv(os.path.join(data_dir, 'transfer_train.csv'), sep='\t')
-    dataset.test = pd.read_csv(os.path.join(data_dir, 'transfer_test.csv'), sep='\t')
+    dataset.val = pd.read_csv(os.path.join(data_dir, 'transfer_test.csv'), sep='\t')
+    dataset.test = pd.read_csv(os.path.join(data_dir, 'test.csv'), sep='\t')  # ADDED ORIGINAL TEST SET HERE
 
     subset_size = 100
     dataset.train = dataset.train.sample(n=min(subset_size, len(dataset.train)), random_state=args.seed)
@@ -205,7 +207,7 @@ def main(args):
     tokenized_dataset = {
         'train': transfer_data_bert_preprocess(dataset.train, max_length=args.max_length),
         'val': transfer_data_bert_preprocess(dataset.val, max_length=args.max_length) if dataset.val is not None else None,
-        'test': transfer_data_bert_preprocess(dataset.test, max_length=args.max_length)
+        'test': bert_preprocess(dataset.test, max_length=args.max_length)
     }
 
     train_data = transfer_get_tf_dataset(tokenized_dataset, 'train')
@@ -216,14 +218,14 @@ def main(args):
         val_data = val_data.batch(args.batch_size).cache().prefetch(tf.data.AUTOTUNE)
     else:
         val_data = None
-    test_data = transfer_get_tf_dataset(tokenized_dataset, 'test')
+    test_data = get_tf_dataset(tokenized_dataset, 'test')
     test_data = test_data.batch(args.batch_size).cache().prefetch(tf.data.AUTOTUNE)
 
     teacher_checkpoint_path = os.path.join(args.teacher_model_save_dir, 'cp-{epoch:02d}.ckpt')
     teacher_checkpoint_dir = os.path.dirname(teacher_checkpoint_path)
     latest_teacher_checkpoint = tf.train.latest_checkpoint(teacher_checkpoint_dir)
     if latest_teacher_checkpoint:
-        student_model.load_weights(latest_teacher_checkpoint)
+        student_model.load_weights(latest_teacher_checkpoint).expect_partial()
         logger.info(f"Found teacher model files, loaded weights from {latest_teacher_checkpoint}")
 
     checkpoint_path = os.path.join(model_dir, 'cp-{epoch:02d}.ckpt')
@@ -240,7 +242,7 @@ def main(args):
     # if we have a checkpoint for max epoch , load it and skip training
     latest_checkpoint = tf.train.latest_checkpoint(model_dir)
     if latest_checkpoint:
-        student_model.load_weights(latest_checkpoint)
+        student_model.load_weights(latest_checkpoint).expect_partial()
         logger.info(f"Found student model files, loaded weights from {latest_checkpoint}")
         logger.info('Skipping training.')
     else:
@@ -261,7 +263,7 @@ def main(args):
     eval_metrics = compute_student_metrics(student_model, test_data)
     with open(os.path.join(result_dir, 'eval_results.json'), 'w') as f:
         json.dump(eval_metrics, f)
-    logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'])}")
+    logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'], zero_division=0)}")
 
     # obtain "cached" MC dropout predictions on eval set
     logger.info('Computing MC dropout metrics...')
@@ -269,7 +271,7 @@ def main(args):
     with open(os.path.join(result_dir, 'student_mc_dropout_metrics.json'), 'w') as f:
         json.dump(metrics, f)
     logger.info(
-        f"\n==== Classification report  (MC dropout) ====\n {classification_report(metrics['y_true'], metrics['y_pred'])}")
+        f"\n==== Classification report  (MC dropout) ====\n {classification_report(metrics['y_true'], metrics['y_pred'], zero_division=0)}")
     f1 = metrics['f1_score']
     logger.info(f"Final f1 score of distilled student model: {f1:.3f}")
 
