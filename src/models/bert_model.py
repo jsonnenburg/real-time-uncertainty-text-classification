@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from transformers import BertConfig, TFBertModel
 import tensorflow as tf
 from transformers.modeling_tf_outputs import TFSequenceClassifierOutput
@@ -106,9 +108,12 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
 
         return {m.name: m.result() for m in self.metrics}
 
-    def cached_mc_dropout_predict(self, inputs, n=20) -> dict:
+    def cached_mc_dropout_predict(self, inputs, dropout_rate: Optional[float] = None, n=20) -> dict:
         bert_outputs = self.bert(inputs, training=False)
         pooled_output = bert_outputs.pooler_output
+
+        if dropout_rate is not None:
+            self.dropout.rate = dropout_rate
 
         all_logits = []
         all_probs = []

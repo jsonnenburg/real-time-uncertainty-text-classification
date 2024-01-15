@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -79,7 +80,7 @@ def compute_student_metrics(model, eval_data):
         logger.error("Metrics could not be computed successfully.")
 
 
-def compute_student_mc_dropout_metrics(model, eval_data, n):
+def compute_student_mc_dropout_metrics(model, eval_data, n, dropout_rate: Optional[float] = None):
     total_logits = []
     total_mean_logits = []
     total_mean_variances = []
@@ -91,7 +92,7 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
     start_time = time.time()
     for batch in eval_data:
         features, labels = batch
-        outputs = model.cached_mc_dropout_predict(features, n=n)
+        outputs = model.cached_mc_dropout_predict(features, n=n, dropout_rate=dropout_rate)
         logits = outputs['logits']
         mean_predictions = outputs['mean_predictions']
         mean_variances = outputs['mean_variances']
@@ -185,7 +186,10 @@ def main(args):
         "batch_size": args.batch_size,
         "epochs": args.epochs,
         "max_length": args.max_length,
-        "n": args.n
+        "n": args.n,
+        "hidden_dropout_prob": teacher_config['hidden_dropout_prob'],
+        "attention_probs_dropout_prob": teacher_config['attention_probs_dropout_prob'],
+        "classifier_dropout": args.final_layer_dropout_rate if args.final_layer_dropout_rate is not None else teacher_config['classifier_dropout']
     }
     model_dir = os.path.join(args.output_dir, 'model')
     os.makedirs(model_dir, exist_ok=True)
@@ -204,6 +208,7 @@ def main(args):
     dataset.val = pd.read_csv(os.path.join(data_dir, 'transfer_test.csv'), sep='\t')
     dataset.test = pd.read_csv(os.path.join(data_dir, 'test.csv'), sep='\t')  # ADDED ORIGINAL TEST SET HERE
 
+    logger.info('Preprocessing data...')
     # prepare data for transfer learning
     tokenized_dataset = {
         'train': transfer_data_bert_preprocess(dataset.train, max_length=args.max_length),
@@ -221,6 +226,7 @@ def main(args):
         val_data = None
     test_data = get_tf_dataset(tokenized_dataset, 'test')
     test_data = test_data.batch(args.batch_size).cache().prefetch(tf.data.AUTOTUNE)
+    logger.info('Data successfully preprocessed.')
 
     teacher_checkpoint_path = os.path.join(args.teacher_model_save_dir, 'cp-{epoch:02d}.ckpt')
     teacher_checkpoint_dir = os.path.dirname(teacher_checkpoint_path)
@@ -268,7 +274,7 @@ def main(args):
 
     # obtain "cached" MC dropout predictions on eval set
     logger.info('Computing MC dropout metrics...')
-    metrics = compute_student_mc_dropout_metrics(student_model, test_data, args.n)
+    metrics = compute_student_mc_dropout_metrics(student_model, test_data, args.n, args.final_layer_dropout_rate)
     with open(os.path.join(result_dir, 'student_mc_dropout_metrics.json'), 'w') as f:
         json.dump(metrics, f)
     logger.info(
@@ -324,6 +330,8 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--epochs', type=int, default=3)
     parser.add_argument('--max_length', type=int, default=48)
+    parser.add_argument('--final_layer_dropout_rate', type=float, default=None,
+                        help="Dropout rate for final layer. If none is provided, dropout rate is inferred from config.")
     parser.add_argument('--n', type=int, default=20,
                         help="Number of MC dropout samples to compute for student MCD metrics.")
     parser.add_argument('--output_dir', type=str, default="out")
