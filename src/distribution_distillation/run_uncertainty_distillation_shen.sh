@@ -19,6 +19,6 @@ pip install --upgrade pip
 pip install -r slurm_requirements.txt
 
 python3.8 src/distribution_distillation/uncertainty_distillation.py --transfer_data_dir data/distribution_distillation \
---teacher_model_save_dir out/bert_teacher/final_hd030_ad020_cd035/model --version_identifier e2_dropout010 \
---save_predictive_distributions --learning_rate 0.00002 --batch_size 32 --epochs 2 --max_length 48 \
---output_dir out/bert_student --m 5 --k 5 --final_layer_dropout_rate 0.1 --seed 42
+--teacher_model_save_dir out/bert_teacher/final_hd030_ad020_cd035/model --version_identifier shen_e2_dropout050 \
+--save_predictive_distributions --learning_rate 0.000002 --batch_size 32 --epochs 2 --max_length 48 \
+--output_dir out/bert_student --m 5 --k 5 --n 50 --remove_dropout_layers --final_layer_dropout_rate 0.50 --seed 42

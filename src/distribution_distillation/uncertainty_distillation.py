@@ -17,7 +17,7 @@ from src.utils.logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset, \
     bert_preprocess, get_tf_dataset
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
-from src.training.train_bert_teacher import serialize_metric, compute_metrics
+from src.training.train_bert_teacher import serialize_metric
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
 from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, nll_score, brier_score,
@@ -165,9 +165,13 @@ def main(args):
     with open(os.path.join(args.teacher_model_save_dir, 'config.json'), 'r') as f:
         teacher_config = json.load(f)
 
-    student_model_config = create_bert_config(teacher_config['hidden_dropout_prob'],
-                                              teacher_config['attention_probs_dropout_prob'],
-                                              teacher_config['classifier_dropout'])
+    if args.remove_dropout_layers:
+        logger.info('Removing dropout layers.')
+        student_model_config = create_bert_config(0.0, 0.0, 0.0)
+    else:
+        student_model_config = create_bert_config(teacher_config['hidden_dropout_prob'],
+                                                  teacher_config['attention_probs_dropout_prob'],
+                                                  teacher_config['classifier_dropout'])
 
     # initialize student model
     student_model = AleatoricMCDropoutBERT(student_model_config, custom_loss_fn=shen_loss)
@@ -330,6 +334,8 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--epochs', type=int, default=3)
     parser.add_argument('--max_length', type=int, default=48)
+    parser.add_argument('--remove_dropout_layers', action='store_true',
+                        help="No dropout layers (dropout prob. set to 0), as per Shen et al (2021).")
     parser.add_argument('--final_layer_dropout_rate', type=float, default=None,
                         help="Dropout rate for final layer. If none is provided, dropout rate is inferred from config.")
     parser.add_argument('--n', type=int, default=20,
