@@ -27,6 +27,19 @@ def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
     return tf.reduce_mean(adjusted_loss)
 
 
+def bce_loss(y_true, y_pred) -> tf.Tensor:
+    """
+    Binary cross entropy loss function for fine-tuning the student model.
+    """
+    try:
+        logits = y_pred['logits']
+        bce = tf.losses.BinaryCrossentropy(from_logits=True)
+        loss = bce(y_true, logits)
+        return loss
+    except KeyError:
+        raise KeyError("y_pred must be a dict with key 'logits'.")
+
+
 def gaussian_mle_loss(y_true, y_pred) -> tf.Tensor:
     """
     Gaussian MLE loss function from Shen et al. (2021) for fine-tuning the student model on the teacher's predictions.
@@ -54,10 +67,10 @@ def shen_loss(y_true, y_pred) -> tf.Tensor:
     try:
         y_true, y_teacher = y_true[0], y_true[1]
 
-        Lt = aleatoric_loss(y_true, y_pred)
+        Lt = bce_loss(y_true, y_pred)  # aleatoric_loss(y_true, y_pred)
         Ls = gaussian_mle_loss(y_teacher, y_pred)
         Ltotal = Ls + weight * Lt
 
-        return tf.reduce_mean(Ltotal)
+        return Ltotal
     except KeyError:
         raise KeyError("y_true must be a dict with keys 'labels' and 'predictions'.")
