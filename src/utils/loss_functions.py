@@ -60,7 +60,8 @@ def shen_loss(y_true, y_pred) -> tf.Tensor:
     Transfer learning loss function from Shen et al. (2021) for fine-tuning the student model.
     Weight corresponds to Lambda in the paper.
 
-    y_true = Tuple(actual ground truth, teacher predictive sample)
+    y_true = Tuple(actual ground truth - CLASS LABELS, teacher predictive sample - LOGITS)
+    y_pred = dict with keys 'logits' and 'log_variances', the outputs of the student model heads
     """
     weight = tf.convert_to_tensor(1, dtype=tf.float32)
 

@@ -57,8 +57,7 @@ def epistemic_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
             logits = outputs['logits']
             all_logits.append(logits)
 
-        all_logits = tf.stack(all_logits, axis=0)
-        mu_t = tf.nn.sigmoid(all_logits)  # shape is (m, batch_size, num_classes) TODO: remove sigmoid?
+        mu_t = tf.stack(all_logits, axis=0)  # shape is (m, batch_size, num_classes)
 
         for j in range(m):
             # for each original sequence, we now save m augmented sequences
@@ -66,7 +65,7 @@ def epistemic_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
                 # extract individual sequence, label, and prediction
                 sequence = text[seq_idx].numpy().decode('utf-8')
                 label = labels[seq_idx].numpy()
-                prediction = mu_t[j, seq_idx, :].numpy()[0]  # shape should be (num_classes,)
+                prediction = mu_t[j, seq_idx, :].numpy()[0]  # shape should be (num_classes,1)
                 # prediction is shape (batch_size, )
                 # append individual sequence, label, and prediction to augmented_data
                 augmented_data['sequences'].append(sequence)
@@ -111,9 +110,8 @@ def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
             all_logits.append(logits)
             all_log_variances.append(log_variances)
 
-        all_logits = tf.stack(all_logits, axis=0)
+        mu_t = tf.stack(all_logits, axis=0)  # shape is (m, batch_size, num_classes)
         all_log_variances = tf.stack(all_log_variances, axis=0)
-        mu_t = tf.nn.sigmoid(all_logits)  # shape is (m, batch_size, num_classes) TODO: remove sigmoid?
 
         # sigma_hat_sq = tf.math.reduce_variance(all_logits, axis=0)
         sigma_hat = tf.sqrt(tf.exp(all_log_variances))
@@ -122,7 +120,7 @@ def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
 
         eps = tf.random.normal(shape=[k, mu_t.shape[1], mu_t.shape[2]])  # what should the shape be? (k, batch_size, num_classes)
         for i in range(k):
-            y_t = tf.clip_by_value(mu_t + (sigma_tilde_reshaped * eps[i, :, :]), clip_value_min=0.0, clip_value_max=1.0)  # probabilistic predictions # TODO: remove clipping
+            y_t = mu_t + (sigma_tilde_reshaped * eps[i, :, :])
             # y_t should be (k, batch_size, num_classes)
             for j in range(m):
                 # for each original sequence, we now save m*k augmented sequences
@@ -130,7 +128,7 @@ def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
                     # extract individual sequence, label, and prediction
                     sequence = text[seq_idx].numpy().decode('utf-8')
                     label = labels[seq_idx].numpy()
-                    prediction = y_t[j, seq_idx, :].numpy()[0] # shape should be (num_classes,)
+                    prediction = y_t[j, seq_idx, :].numpy()[0]  # shape should be (num_classes,1)
                     # prediction is shape (batch_size, )
                     # append individual sequence, label, and prediction to augmented_data
                     augmented_data['sequences'].append(sequence)
@@ -160,7 +158,7 @@ def preprocess_transfer_data(df: pd.DataFrame) -> tf.data.Dataset:
             'attention_mask': attention_masks
         },
         labels
-    )).batch(16)
+    )).batch(32)
     return dataset
 
 
@@ -193,7 +191,7 @@ def main(args):
     latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
     if latest_checkpoint:
         print("Loading weights from", checkpoint_dir)
-        teacher.load_weights(latest_checkpoint)
+        teacher.load_weights(latest_checkpoint).expect_partial()
 
     teacher.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=2e-5),
@@ -232,7 +230,8 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--m', type=int, default=5)
     parser.add_argument('--k', type=int, default=10)
-    parser.add_argument('--epistemic_only', action='store_true')  # if true, only model epistemic uncertainty, else also model aleatoric uncertainty
+    parser.add_argument('--epistemic_only', action='store_true',
+                        help='If true, only model epistemic uncertainty, else also model aleatoric uncertainty.')
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
 
