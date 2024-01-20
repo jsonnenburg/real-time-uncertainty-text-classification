@@ -38,7 +38,7 @@ def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
 
     https://stats.stackexchange.com/questions/573491/using-logsumexp-in-softmax
     https://lips.cs.princeton.edu/computing-log-sum-exp/
-    """
+
     # with logit and variance output for each batch, perform MC integration
     # both are (batch size, 1)
 
@@ -48,7 +48,7 @@ def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
 
     # with x_hat shape (i, t, c') and y_true shape (i, c), compute the loss for the whole batch
     # note: c' is the number of classes, c is the number of classes for the task
-
+    """
     mean_logits = y_pred['mean_logits']  # Shape: (batch_size, 1)
     mean_log_variances = y_pred['mean_log_variances']  # Shape: (batch_size, 1)
 
@@ -103,6 +103,9 @@ def bce_loss(y_true, y_pred) -> tf.Tensor:
 def gaussian_mle_loss(y_true, y_pred) -> tf.Tensor:
     """
     Gaussian MLE loss function from Shen et al. (2021) for fine-tuning the student model on the teacher's predictions.
+
+    y_true = the teacher logits
+    y_pred = dict with keys 'logits' and 'log_variances', the outputs of the student model heads
     """
     try:
         logits, log_variances = y_pred['logits'], y_pred['log_variances']

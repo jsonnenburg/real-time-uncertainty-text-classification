@@ -19,6 +19,14 @@ def compute_total_uncertainty(all_logits, all_log_variances):
 def mc_dropout_predict(model, inputs, n=20, seed_list=None):
     """
     Computes the mean and variance of the predictions of a model with MC dropout enabled over N samples.
+
+    :return all_logits: All logits for each MC dropout sample (N, batch_size, num_classes)
+    :return mean_variances: Aleatoric uncertainty - mean of the variance computed from the log variance for each MC
+    dropout sample (batch_size, num_classes)
+    :return mean_predictions: Mean of the logit predictions for each MC dropout sample (batch_size, num_classes)
+    :return var_predictions: Variance of the logit predictions for each MC dropout sample (batch_size, num_classes)
+    :return total_uncertainty: Total uncertainty = epistemic uncertainty + aleatoric uncertainty (batch_size, num_classes)
+    as computed by Kendall & Gal (2017), Eq. 9.
     """
     all_logits = []
     all_log_variances = []

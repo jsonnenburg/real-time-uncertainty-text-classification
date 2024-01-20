@@ -75,7 +75,7 @@ def compute_metrics(model, eval_data):
             "y_true": labels_np.tolist(),
             "y_pred": class_predictions_np.tolist(),
             "y_prob": prob_predictions_np.tolist(),
-            "variance": variances.tolist(),
+            "aleatoric_uncertainty": variances.tolist(),
             "average_inference_time": serialize_metric(average_inference_time),
             "accuracy_score": serialize_metric(acc),
             "precision_score": serialize_metric(prec),
@@ -138,7 +138,7 @@ def compute_mc_dropout_metrics(model, eval_data, n=20) -> dict:
             "y_true": labels_np.tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
-            "variance": mean_variances_np.tolist(),
+            "aleatoric_uncertainty": mean_variances_np.tolist(),
             "total_uncertainty": total_uncertainties_np.tolist(),
             "average_inference_time": serialize_metric(average_inference_time),
             "accuracy_score": serialize_metric(acc),
@@ -349,9 +349,9 @@ def main(args):
     dataset = data_loader.get_dataset()
 
     # define dropout probabilities for grid search
-    hidden_dropout_probs = [0.1, 0.2, 0.3]
-    attention_dropout_probs = [0.05, 0.2, 0.35]
-    classifier_dropout_probs = [0.05, 0.2, 0.35]
+    hidden_dropout_probs = [0.2, 0.3, 0.4]
+    attention_dropout_probs = [0.1, 0.2, 0.3]
+    classifier_dropout_probs = [0.2, 0.3, 0.4]
 
     # TODO: if best model is already trained and saved, skip grid search and just load best model -> useful to recompute metrics if needed
 
