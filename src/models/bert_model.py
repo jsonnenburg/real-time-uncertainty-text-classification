@@ -89,8 +89,8 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
                     {
                         'logits': y_pred.logits,
                         'log_variances': y_pred.log_variances,
-                        'mean_logits': y_pred_mc.mean_logits,
-                        'mean_log_variances': y_pred_mc.mean_log_variances
+                        'mean_logits': y_pred_mc['mean_logits'],
+                        'mean_log_variances': y_pred_mc['mean_log_variances']
                     }
                 )
             else:
@@ -115,8 +115,8 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
                 {
                     'logits': y_pred.logits,
                     'log_variances': y_pred.log_variances,
-                    'mean_logits': y_pred_mc.mean_logits,
-                    'mean_log_variances': y_pred_mc.mean_log_variances
+                    'mean_logits': y_pred_mc['mean_logits'],
+                    'mean_log_variances': y_pred_mc['mean_log_variances']
                 }
             )
         else:

@@ -49,16 +49,16 @@ def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
     # with x_hat shape (i, t, c') and y_true shape (i, c), compute the loss for the whole batch
     # note: c' is the number of classes, c is the number of classes for the task
 
-    mean_logits = y_pred['mean_logits']
-    mean_log_variances = y_pred['mean_log_variances']
+    mean_logits = y_pred['mean_logits']  # Shape: (batch_size, 1)
+    mean_log_variances = y_pred['mean_log_variances']  # Shape: (batch_size, 1)
 
     batch_size = tf.shape(mean_logits)[0]
     num_MC_samples = 20  # needs to be consistent across loss and cached mc dropout predict
 
     # Expand mean_logits and log_variances to include the MC sample dimension
-    mean_logits_expanded = tf.expand_dims(mean_logits, 1)  # Shape: (batch_size, 1)
+    mean_logits_expanded = tf.tile(mean_logits, [1, num_MC_samples])  # Shape: (batch_size, num_MC_samples)
     std_dev = tf.sqrt(tf.exp(mean_log_variances))  # Standard deviation from log variance
-    std_dev_expanded = tf.expand_dims(std_dev, 1)  # Shape: (batch_size, 1)
+    std_dev_expanded = tf.tile(std_dev, [1, num_MC_samples])  # Shape: (batch_size, num_MC_samples)
 
     # Sample from standard normal distribution
     epsilon = tf.random.normal(shape=(batch_size, 20))
@@ -67,22 +67,22 @@ def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
     # Compute the corrupted probabilities
     sigmoid_probs = tf.nn.sigmoid(x_hat)
 
-    # transform y_true into shape (batch_size, MC_samples)
-    y_true_MC_dropout = tf.tile(y_true, [1, num_MC_samples])
+    # Transform y_true into shape (batch_size, num_MC_samples)
+    y_true_MC_dropout = tf.tile(tf.expand_dims(y_true, 1), tf.constant([1, num_MC_samples], dtype=tf.int32))
 
     # Compute the probabilities for the true labels
     probs = tf.where(y_true_MC_dropout == 1,
                          sigmoid_probs,
-                         1 - sigmoid_probs)  # Shape: (batch_size, num_MC_samples)
+                         1 - sigmoid_probs)  # desired output shape: (batch_size, num_MC_samples)
 
     # Compute the mean probability for each sequence
-    mean_probs = tf.reduce_mean(probs, axis=1)  # Shape: (batch_size,)
+    mean_probs = tf.reduce_mean(probs, axis=1)  # output shape: (batch_size,)
 
     # Compute the log probabilities for the mean logits
-    log_mean_probs = tf.math.log(mean_probs)  # Shape: (batch_size,)
+    log_mean_probs = tf.math.log(mean_probs)  # output shape: (batch_size,)
 
     # Negative log likelihood loss for the whole batch
-    loss = tf.reduce_mean(log_mean_probs) # Shape: (1,)
+    loss = tf.reduce_mean(log_mean_probs)  # output shape: (1,)
 
     return loss
 
