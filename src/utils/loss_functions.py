@@ -11,7 +11,6 @@ def null_loss(y_true, y_pred) -> tf.Tensor:
 def archived_aleatoric_loss(y_true, y_pred) -> tf.Tensor:
     """
     Aleatoric uncertainty loss function from Kendall & Gal (2017) for fine-tuning the teacher model.
-    TODO: turn this into eq. 12 from Kendall & Gal (2017)
     """
     if not isinstance(y_pred, dict) or 'logits' not in y_pred or 'log_variances' not in y_pred:
         raise ValueError("y_pred must be a dictionary with 'logits' and 'log_variances' keys.")
@@ -43,7 +42,7 @@ def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
     # with logit and variance output for each batch, perform MC integration
     # both are (batch size, 1)
 
-    # use cached MC dropout predictions TODO: move this to the train_step and test_step functions in the model
+    # use cached MC dropout predictions
     # with mean logits and mean std. dev of each sequence, compute xhat_i,t (batch size, number of MC samples) by
     # sampling from N(0, 1) for each MC dropout sample t for each sequence i
 
