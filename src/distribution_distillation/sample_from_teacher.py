@@ -58,7 +58,7 @@ def epistemic_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
             all_logits.append(logits)
 
         all_logits = tf.stack(all_logits, axis=0)
-        mu_t = tf.nn.sigmoid(all_logits)  # shape is (m, batch_size, num_classes)
+        mu_t = tf.nn.sigmoid(all_logits)  # shape is (m, batch_size, num_classes) TODO: remove sigmoid?
 
         for j in range(m):
             # for each original sequence, we now save m augmented sequences
@@ -113,7 +113,7 @@ def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
 
         all_logits = tf.stack(all_logits, axis=0)
         all_log_variances = tf.stack(all_log_variances, axis=0)
-        mu_t = tf.nn.sigmoid(all_logits)  # shape is (m, batch_size, num_classes)
+        mu_t = tf.nn.sigmoid(all_logits)  # shape is (m, batch_size, num_classes) TODO: remove sigmoid?
 
         # sigma_hat_sq = tf.math.reduce_variance(all_logits, axis=0)
         sigma_hat = tf.sqrt(tf.exp(all_log_variances))
@@ -122,7 +122,7 @@ def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
 
         eps = tf.random.normal(shape=[k, mu_t.shape[1], mu_t.shape[2]])  # what should the shape be? (k, batch_size, num_classes)
         for i in range(k):
-            y_t = tf.clip_by_value(mu_t + (sigma_tilde_reshaped * eps[i, :, :]), clip_value_min=0.0, clip_value_max=1.0)  # probabilistic predictions
+            y_t = tf.clip_by_value(mu_t + (sigma_tilde_reshaped * eps[i, :, :]), clip_value_min=0.0, clip_value_max=1.0)  # probabilistic predictions # TODO: remove clipping
             # y_t should be (k, batch_size, num_classes)
             for j in range(m):
                 # for each original sequence, we now save m*k augmented sequences

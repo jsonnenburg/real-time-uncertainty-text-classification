@@ -67,7 +67,7 @@ def shen_loss(y_true, y_pred) -> tf.Tensor:
     try:
         y_true, y_teacher = y_true[0], y_true[1]
 
-        Lt = bce_loss(y_true, y_pred)  # aleatoric_loss(y_true, y_pred)
+        Lt = aleatoric_loss(y_true, y_pred)
         Ls = gaussian_mle_loss(y_teacher, y_pred)
         Ltotal = Ls + weight * Lt
 
