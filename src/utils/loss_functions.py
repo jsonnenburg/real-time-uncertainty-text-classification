@@ -71,9 +71,7 @@ def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
     y_true_MC_dropout = tf.tile(tf.expand_dims(y_true, 1), tf.constant([1, num_MC_samples], dtype=tf.int32))
 
     # Compute the probabilities for the true labels
-    probs = tf.where(y_true_MC_dropout == 1,
-                         sigmoid_probs,
-                         1 - sigmoid_probs)  # desired output shape: (batch_size, num_MC_samples)
+    probs = tf.where(y_true_MC_dropout == 1, sigmoid_probs, 1 - sigmoid_probs)  # output shape: (batch_size, num_MC_samples)
 
     # Compute the mean probability for each sequence
     mean_probs = tf.reduce_mean(probs, axis=1)  # output shape: (batch_size,)
@@ -82,7 +80,7 @@ def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
     log_mean_probs = tf.math.log(mean_probs)  # output shape: (batch_size,)
 
     # Negative log likelihood loss for the whole batch
-    loss = tf.reduce_mean(log_mean_probs)  # output shape: (1,)
+    loss = -tf.reduce_mean(log_mean_probs)  # output shape: (1,)
 
     return loss
 
