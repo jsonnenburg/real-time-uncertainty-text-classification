@@ -20,7 +20,7 @@ from src.data.robustness_study.bert_data_preprocessing import bert_preprocess, g
 from src.utils.inference import mc_dropout_predict
 from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, nll_score, brier_score,
                                pred_entropy_score, ece_score)
-from src.utils.loss_functions import aleatoric_loss, null_loss
+from src.utils.loss_functions import null_loss, bayesian_binary_crossentropy
 from src.utils.data import SimpleDataLoader, Dataset
 from src.utils.training import HistorySaver
 
@@ -205,12 +205,12 @@ def train_model(paths: dict, config, dataset: Dataset, batch_size: int, learning
     :return: eval_metrics
     """
 
-    model = AleatoricMCDropoutBERT(config=config, custom_loss_fn=aleatoric_loss)
+    model = AleatoricMCDropoutBERT(config=config, custom_loss_fn=bayesian_binary_crossentropy(50))
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     model.compile(
         optimizer=optimizer,
-        loss={'classifier': aleatoric_loss, 'log_variance': null_loss},
+        loss={'classifier': bayesian_binary_crossentropy(50), 'log_variance': null_loss},
         metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
         run_eagerly=True
     )

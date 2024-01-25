@@ -85,14 +85,47 @@ def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
     return loss
 
 
+# The following was adapted from https://github.com/kyle-dorman/bayesian-neural-network-blogpost/tree/master.
+def bayesian_binary_crossentropy(T):
+    def bayesian_binary_crossentropy_internal(y_true, y_pred):
+        y_true = tf.expand_dims(y_true, -1)
+        pred = y_pred['logits']
+        log_variance = y_pred['log_variances']
+        variance = tf.exp(log_variance)
+        std = tf.sqrt(variance)
+
+        variance_depressor = tf.exp(variance) - tf.ones_like(variance)
+        undistorted_loss = tf.keras.losses.binary_crossentropy(y_true, pred, from_logits=True)
+
+        def monte_carlo_fn(i):
+            return gaussian_binary_crossentropy(y_true, pred, std, undistorted_loss)
+
+        monte_carlo_results = tf.map_fn(
+            monte_carlo_fn,
+            tf.ones(T),
+            fn_output_signature=tf.float32
+        )
+        variance_loss = tf.reduce_mean(monte_carlo_results, axis=0) * undistorted_loss
+
+        return variance_loss + undistorted_loss + variance_depressor
+
+    return bayesian_binary_crossentropy_internal
+
+# Gaussian binary cross entropy
+def gaussian_binary_crossentropy(true, pred, std, undistorted_loss):
+    std_sample = tf.random.normal(shape=tf.shape(true), stddev=std)
+    distorted_loss = tf.keras.losses.binary_crossentropy(true, pred + std_sample, from_logits=True)
+    diff = undistorted_loss - distorted_loss
+    return -tf.nn.elu(diff)
+
+
 def bce_loss(y_true, y_pred) -> tf.Tensor:
     """
     Binary cross entropy loss function for fine-tuning the student model.
     """
     try:
         logits = y_pred['logits']
-        bce = tf.losses.BinaryCrossentropy(from_logits=True)
-        loss = bce(y_true, logits)
+        loss = tf.keras.losses.binary_crossentropy(y_true, logits, from_logits=True)
         return loss
     except KeyError:
         raise KeyError("y_pred must be a dict with key 'logits'.")
@@ -104,6 +137,7 @@ def gaussian_mle_loss(y_true, y_pred) -> tf.Tensor:
 
     y_true = the teacher logits
     y_pred = dict with keys 'logits' and 'log_variances', the outputs of the student model heads
+    # TODO: check in existing implementations if this is correct!
     """
     try:
         logits, log_variances = y_pred['logits'], y_pred['log_variances']
@@ -129,7 +163,7 @@ def shen_loss(y_true, y_pred) -> tf.Tensor:
     try:
         y_true, y_teacher = y_true[0], y_true[1]
 
-        Lt = aleatoric_loss(y_true, y_pred)
+        Lt = aleatoric_loss(y_true, y_pred)  # TODO: change to bayesian_binary_crossentropy
         Ls = gaussian_mle_loss(y_teacher, y_pred)
         Ltotal = Ls + weight * Lt
 

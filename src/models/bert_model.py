@@ -80,7 +80,6 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
 
         with tf.GradientTape() as tape:
             y_pred = self(x, training=True)
-            y_pred_mc = self.minimal_cached_mc_dropout_predict(x, n=20)
             if not isinstance(y_pred, CustomTFSequenceClassifierOutput):
                 raise TypeError("The output of the model is not CustomTFSequenceClassifierOutput.")
             if self.custom_loss_fn is not None:
@@ -88,9 +87,7 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
                     y,
                     {
                         'logits': y_pred.logits,
-                        'log_variances': y_pred.log_variances,
-                        'mean_logits': y_pred_mc['mean_logits'],
-                        'mean_log_variances': y_pred_mc['mean_log_variances']
+                        'log_variances': y_pred.log_variances
                     }
                 )
             else:
@@ -106,7 +103,6 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
         x, y = data
 
         y_pred = self(x, training=False)
-        y_pred_mc = self.minimal_cached_mc_dropout_predict(x, n=20)
         if not isinstance(y_pred, CustomTFSequenceClassifierOutput):
             raise TypeError("The output of the model is not CustomTFSequenceClassifierOutput.")
         if self.custom_loss_fn is not None:
@@ -114,9 +110,7 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
                 y,
                 {
                     'logits': y_pred.logits,
-                    'log_variances': y_pred.log_variances,
-                    'mean_logits': y_pred_mc['mean_logits'],
-                    'mean_log_variances': y_pred_mc['mean_log_variances']
+                    'log_variances': y_pred.log_variances
                 }
             )
         else:
