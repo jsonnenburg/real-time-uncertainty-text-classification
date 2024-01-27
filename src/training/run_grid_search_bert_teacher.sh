@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=rtuq-bert-teacher-grid-search
 #SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:a10080gb:3
 #SBATCH --mem=32G
 #SBATCH --output=bert_finetune_%j.out
-#SBATCH --time=60:00:00
+#SBATCH --time=40:00:00
 
 module load python/3.8
 module load cuda/11.3
@@ -18,6 +18,8 @@ pip install --upgrade pip
 
 pip install -r slurm_requirements.txt
 
-python3.8 src/training/train_bert_teacher.py --input_data_dir data/robustness_study/preprocessed --output_dir src/training/out/bert_teacher  \
+export TF_GPU_ALLOCATOR=cuda_malloc_async
+
+python3.8 src/training/train_bert_teacher.py --input_data_dir data/robustness_study/preprocessed --output_dir out/bert_teacher_gridsearch  \
 --learning_rate 0.00002 --batch_size 32 --epochs 3 --max_length 48 --mc_dropout_inference --seed 42 \
 --save_datasets --cleanup
