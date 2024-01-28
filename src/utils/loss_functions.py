@@ -124,31 +124,25 @@ def bce_loss(y_true, y_pred) -> tf.Tensor:
     Binary cross entropy loss function for fine-tuning the student model.
     """
     try:
-        logits = y_pred['logits']
+        logits = y_pred['mean_logits']
         loss = tf.keras.losses.binary_crossentropy(y_true, logits, from_logits=True)
         return loss
     except KeyError:
-        raise KeyError("y_pred must be a dict with key 'logits'.")
+        raise KeyError("y_pred must be a dict with key 'mean_logits'.")
 
 
 def gaussian_mle_loss(y_true, y_pred) -> tf.Tensor:
     """
     Gaussian MLE loss function from Shen et al. (2021) for fine-tuning the student model on the teacher's predictions.
-
-    y_true = the teacher logits
-    y_pred = dict with keys 'logits' and 'log_variances', the outputs of the student model heads
-    # TODO: check in existing implementations if this is correct!
     """
     try:
-        logits, log_variances = y_pred['logits'], y_pred['log_variances']
-        # calculate the Gaussian MLE loss
-        # loss = 0.5 * tf.reduce_mean(variance_i + tf.square(y_true - mu_i) / variance_i - log_variance_i
-        loss = tf.reduce_mean(0.5 * tf.exp(-log_variances) * tf.norm(y_true - logits, ord='euclidean') + 0.5 * log_variances)
+        mean_logits, log_variances = y_pred['mean_logits'], y_pred['log_variances']
+        loss = tf.reduce_mean(0.5 * tf.exp(-log_variances) * tf.norm(y_true - mean_logits, ord='euclidean') + 0.5 * log_variances)
         # TODO: check if this corresponds to Eq. 10 in Shen et al. (2021)
         # TODO: it doesn't!
         return loss
     except KeyError:
-        raise KeyError("y_pred must be a dict with keys 'logits' and 'log_variances'.")
+        raise KeyError("y_pred must be a dict with keys 'mean_logits' and 'log_variances'.")
 
 
 def shen_loss(y_true, y_pred) -> tf.Tensor:
@@ -164,8 +158,7 @@ def shen_loss(y_true, y_pred) -> tf.Tensor:
     try:
         y_true, y_teacher = y_true[0], y_true[1]
 
-        bbc_loss = bayesian_binary_crossentropy(50)
-        Lt = bbc_loss(y_true, y_pred)
+        Lt = bce_loss(y_true, y_pred)
         Ls = gaussian_mle_loss(y_teacher, y_pred)
         Ltotal = Ls + weight * Lt
 

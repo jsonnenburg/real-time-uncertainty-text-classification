@@ -212,7 +212,7 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
 
 
 class AleatoricMCDropoutBERTStudent(tf.keras.Model):
-    def __init__(self, config, custom_loss_fn=None):
+    def __init__(self, config, custom_loss_fn=None, T=50):
         super(AleatoricMCDropoutBERTStudent, self).__init__()
         self.bert = TFBertModel.from_pretrained(
             'bert-base-uncased',
@@ -230,7 +230,7 @@ class AleatoricMCDropoutBERTStudent(tf.keras.Model):
         self.log_variance_predictor = tf.keras.layers.Dense(
             units=1,
             kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=config.initializer_range),
-            activation='linear',
+            # activation='linear',
             name="log_variance",
             trainable=True
         )
@@ -240,26 +240,75 @@ class AleatoricMCDropoutBERTStudent(tf.keras.Model):
         else:
             self.custom_loss_fn = tf.keras.losses.BinaryCrossentropy()
 
+        self.T = T
+
     def call(self, inputs, training=False, mask=None):
-        bert_outputs = self.bert(inputs, training=training)
-        pooled_output = bert_outputs.pooler_output
-        pooled_output = self.dropout(pooled_output, training=training)
-
-        logits = self.classifier(pooled_output)
-        probs = tf.nn.sigmoid(logits)
-        log_variances = self.log_variance_predictor(pooled_output)
-
-        return CustomTFSequenceClassifierOutput(
-            logits=logits,
-            probs=probs,
-            log_variances=log_variances,
-            hidden_states=bert_outputs.hidden_states,
-            attentions=bert_outputs.attentions
-        )
-
-    def cached_mc_dropout_predict(self, inputs, n=20) -> dict:
         bert_outputs = self.bert(inputs, training=False)
         pooled_output = bert_outputs.pooler_output
+
+        all_logits = []
+        for i in range(self.T):
+            tf.random.set_seed(range(self.T)[i])
+            dropout_output = self.dropout(pooled_output, training=True)
+            logits = self.classifier(dropout_output)
+            all_logits.append(logits)
+
+        all_logits = tf.stack(all_logits, axis=0)
+        mean_logits = tf.reduce_mean(all_logits, axis=0)
+        log_variances = tf.math.log(tf.math.reduce_variance(all_logits, axis=0))
+
+        return {'mean_logits': mean_logits,
+                'log_variances': log_variances}
+
+    def train_step(self, data):
+        x, y = data
+
+        with tf.GradientTape() as tape:
+            y_pred = self(x, training=True)
+            if self.custom_loss_fn is not None:
+                loss = self.custom_loss_fn(
+                    y,
+                    {
+                        'mean_logits': y_pred.mean_logits,
+                        'log_variances': y_pred.log_variances
+                    }
+                )
+            else:
+                raise ValueError("No custom loss function provided!")
+
+        gradients = tape.gradient(loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        self.compiled_metrics.update_state(y, y_pred.probs)
+
+        return {m.name: m.result() for m in self.metrics}
+
+    def test_step(self, data):
+        x, y = data
+
+        y_pred = self(x, training=False)
+        if not isinstance(y_pred, CustomTFSequenceClassifierOutput):
+            raise TypeError("The output of the model is not CustomTFSequenceClassifierOutput.")
+        if self.custom_loss_fn is not None:
+            loss = self.custom_loss_fn(
+                y,
+                {
+                    'logits': y_pred.logits,
+                    'log_variances': y_pred.log_variances
+                }
+            )
+        else:
+            raise ValueError("No custom loss function provided!")
+
+        self.compiled_metrics.update_state(y, y_pred.probs)
+
+        return {m.name: m.result() for m in self.metrics}
+
+    def cached_mc_dropout_predict(self, inputs, dropout_rate: Optional[float] = None, n=20) -> dict:
+        bert_outputs = self.bert(inputs, training=False)
+        pooled_output = bert_outputs.pooler_output
+
+        if dropout_rate is not None:
+            self.dropout.rate = dropout_rate
 
         all_logits = []
         all_probs = []
@@ -293,39 +342,35 @@ class AleatoricMCDropoutBERTStudent(tf.keras.Model):
                 'total_uncertainty': total_uncertainty,
                 }
 
-    def train_step(self, data):
-        x, y = data
+    def minimal_cached_mc_dropout_predict(self, inputs, dropout_rate: Optional[float] = None, n=20) -> dict:
+        bert_outputs = self.bert(inputs, training=False)
+        pooled_output = bert_outputs.pooler_output
 
-        with tf.GradientTape() as tape:
-            y_pred = self(x, training=True)
-            if not isinstance(y_pred, CustomTFSequenceClassifierOutput):
-                raise TypeError("The output of the model is not CustomTFSequenceClassifierOutput.")
-            if self.custom_loss_fn is not None:
-                loss = self.custom_loss_fn(y, {'logits': y_pred.logits, 'log_variances': y_pred.log_variances})
-            else:
-                raise ValueError("No custom loss function provided!")
+        if dropout_rate is not None:
+            self.dropout.rate = dropout_rate
 
-        gradients = tape.gradient(loss, self.trainable_variables)
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-        self.compiled_metrics.update_state(y, y_pred.probs)
+        all_logits = []
+        all_probs = []
+        all_log_variances = []
+        for i in range(n):
+            tf.random.set_seed(range(n)[i])
+            dropout_output = self.dropout(pooled_output, training=True)
+            logits = self.classifier(dropout_output)
+            probs = tf.nn.sigmoid(logits)
+            log_variances = self.log_variance_predictor(dropout_output)
+            all_logits.append(logits)
+            all_log_variances.append(log_variances)
 
-        return {m.name: m.result() for m in self.metrics}
+        all_logits = tf.stack(all_logits, axis=0)
+        all_probs = tf.stack(all_probs, axis=0)
+        all_log_variances = tf.stack(all_log_variances, axis=0)
+        mean_predictions = tf.reduce_mean(all_logits, axis=0)
+        mean_log_variances = tf.math.reduce_variance(all_log_variances, axis=0)
 
-    def test_step(self, data):
-        x, y = data
-
-        y_pred = self.call(x, training=False)
-        if not isinstance(y_pred, CustomTFSequenceClassifierOutput):
-            raise TypeError("The output of the model is not CustomTFSequenceClassifierOutput.")
-        if self.custom_loss_fn is not None:
-            loss = self.custom_loss_fn(y, {'logits': y_pred.logits, 'log_variances': y_pred.log_variances})
-        else:
-            raise ValueError("No custom loss function provided!")
-
-        self.compiled_metrics.update_state(y, y_pred.probs)
-
-        return {m.name: m.result() for m in self.metrics}
-
+        return {'probs': all_probs,
+                'mean_logits': mean_predictions,
+                'mean_log_variances': mean_log_variances
+                }
 
     def get_config(self):
         config = {
