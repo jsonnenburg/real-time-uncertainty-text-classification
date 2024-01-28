@@ -142,9 +142,10 @@ def gaussian_mle_loss(y_true, y_pred) -> tf.Tensor:
     try:
         logits, log_variances = y_pred['logits'], y_pred['log_variances']
         # calculate the Gaussian MLE loss
-        # loss = 0.5 * tf.reduce_mean(variance_i + tf.square(y_true - mu_i) / variance_i - log_variance_i)
-        loss = tf.reduce_mean(0.5 * tf.exp(-log_variances) * tf.square(y_true - logits) + 0.5 * log_variances)
+        # loss = 0.5 * tf.reduce_mean(variance_i + tf.square(y_true - mu_i) / variance_i - log_variance_i
+        loss = tf.reduce_mean(0.5 * tf.exp(-log_variances) * tf.norm(y_true - logits, ord='euclidean') + 0.5 * log_variances)
         # TODO: check if this corresponds to Eq. 10 in Shen et al. (2021)
+        # TODO: it doesn't!
         return loss
     except KeyError:
         raise KeyError("y_pred must be a dict with keys 'logits' and 'log_variances'.")
@@ -163,7 +164,8 @@ def shen_loss(y_true, y_pred) -> tf.Tensor:
     try:
         y_true, y_teacher = y_true[0], y_true[1]
 
-        Lt = aleatoric_loss(y_true, y_pred)  # TODO: change to bayesian_binary_crossentropy
+        bbc_loss = bayesian_binary_crossentropy(50)
+        Lt = bbc_loss(y_true, y_pred)
         Ls = gaussian_mle_loss(y_teacher, y_pred)
         Ltotal = Ls + weight * Lt
 

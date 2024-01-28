@@ -13,7 +13,7 @@ import tensorflow as tf
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
 from src.utils.data import Dataset
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
-from src.utils.loss_functions import aleatoric_loss, null_loss
+from src.utils.loss_functions import null_loss, bayesian_binary_crossentropy
 
 
 # obtain samples from teacher's posterior predictive distribution on training (+validation) set after having determined
@@ -184,7 +184,7 @@ def main(args):
                                 teacher_config['classifier_dropout'])
 
     # initialize teacher model
-    teacher = AleatoricMCDropoutBERT(config=config, custom_loss_fn=aleatoric_loss)
+    teacher = AleatoricMCDropoutBERT(config=config, custom_loss_fn=bayesian_binary_crossentropy)
     checkpoint_path = os.path.join(args.teacher_model_save_dir, 'cp-{epoch:02d}.ckpt')
     checkpoint_dir = os.path.dirname(checkpoint_path)
 
@@ -195,7 +195,7 @@ def main(args):
 
     teacher.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=2e-5),
-            loss={'classifier': aleatoric_loss, 'log_variance': null_loss},
+            loss={'classifier': bayesian_binary_crossentropy, 'log_variance': null_loss},
             metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
             run_eagerly=True
         )
