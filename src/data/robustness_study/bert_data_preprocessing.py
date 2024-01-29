@@ -1,3 +1,4 @@
+import ast
 from typing import Tuple, Dict
 
 from transformers import BertTokenizer
@@ -48,7 +49,8 @@ def transfer_data_bert_preprocess(preprocessed_data, max_length=48) -> Tuple[tf.
     :param max_length: The maximum length of the sequences.
     :return: Tuple of input_ids, attention_masks, labels
     """
-    sequences, labels, predictions = preprocessed_data['sequences'].values, preprocessed_data['labels'].values, preprocessed_data['predictions'].values
+    sequences, labels = preprocessed_data['sequences'].values, preprocessed_data['labels'].values
+    predictions = [ast.literal_eval(pred) if isinstance(pred, str) else pred for pred in preprocessed_data['predictions'].values]
     tokenized_output = tokenizer(
         text=sequences.tolist(),
         add_special_tokens=True,
@@ -61,7 +63,7 @@ def transfer_data_bert_preprocess(preprocessed_data, max_length=48) -> Tuple[tf.
     input_ids = tokenized_output['input_ids']
     attention_masks = tokenized_output['attention_mask']
     labels = tf.constant(labels)
-    predictions = tf.constant(predictions)
+    predictions = tf.constant(predictions, dtype=tf.float32)
 
     return input_ids, attention_masks, labels, predictions
 

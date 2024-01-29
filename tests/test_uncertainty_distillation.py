@@ -16,7 +16,7 @@ from src.distribution_distillation.uncertainty_distillation import get_predictiv
 from src.utils.logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset, \
     bert_preprocess, get_tf_dataset
-from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
+from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT, AleatoricMCDropoutBERTStudent
 from src.training.train_bert_teacher import serialize_metric
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
@@ -39,8 +39,8 @@ def compute_student_metrics(model, eval_data):
     for batch in eval_data:
         features, labels = batch
         outputs = model(features, training=False)
-        total_logits.extend(outputs.logits)
-        total_log_variances.extend(outputs.log_variances)
+        total_logits.extend(outputs['mean_logits'])
+        total_log_variances.extend(outputs['log_variances'])
         total_labels.extend(labels.numpy())
     total_time = time.time() - start_time
     average_inference_time = total_time / len(total_labels) * 1000
@@ -80,6 +80,7 @@ def compute_student_metrics(model, eval_data):
 
 
 def compute_student_mc_dropout_metrics(model, eval_data, n):
+    # NOT NEEDED ANYMORE FOR STUDENT MODEL THAT ALWAYS OUTPUTS (mean_logits, mean_log_variances)
     total_logits = []
     total_mean_logits = []
     total_mean_variances = []
@@ -163,7 +164,7 @@ def main(args):
                                               teacher_config['classifier_dropout'])
 
     # initialize student model
-    student_model = AleatoricMCDropoutBERT(student_model_config, custom_loss_fn=shen_loss)
+    student_model = AleatoricMCDropoutBERTStudent(student_model_config, custom_loss_fn=shen_loss)
     # compile with shen loss
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.learning_rate)
     student_model.compile(
@@ -194,8 +195,8 @@ def main(args):
         data_dir = os.path.join(args.transfer_data_dir, 'aleatoric_and_epistemic', f'm{args.m}_k{args.k}')
 
     dataset = Dataset()
-    dataset.train = pd.read_csv(os.path.join(data_dir, 'transfer_train.csv'), sep='\t')
-    dataset.val = pd.read_csv(os.path.join(data_dir, 'transfer_test.csv'), sep='\t')
+    dataset.train = pd.read_csv(os.path.join(data_dir, 'transfer_train_grouped.csv'), sep='\t')
+    dataset.val = pd.read_csv(os.path.join(data_dir, 'transfer_test_grouped.csv'), sep='\t')
     dataset.test = pd.read_csv(os.path.join(data_dir, 'test.csv'), sep='\t')  # ADDED ORIGINAL TEST SET HERE
 
     subset_size = 100

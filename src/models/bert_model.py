@@ -255,9 +255,11 @@ class AleatoricMCDropoutBERTStudent(tf.keras.Model):
 
         all_logits = tf.stack(all_logits, axis=0)
         mean_logits = tf.reduce_mean(all_logits, axis=0)
+        mean_probs = tf.nn.sigmoid(mean_logits)
         log_variances = tf.math.log(tf.math.reduce_variance(all_logits, axis=0))
 
         return {'mean_logits': mean_logits,
+                'mean_probs': mean_probs,
                 'log_variances': log_variances}
 
     def train_step(self, data):
@@ -269,8 +271,8 @@ class AleatoricMCDropoutBERTStudent(tf.keras.Model):
                 loss = self.custom_loss_fn(
                     y,
                     {
-                        'mean_logits': y_pred.mean_logits,
-                        'log_variances': y_pred.log_variances
+                        'mean_logits': y_pred['mean_logits'],
+                        'log_variances': y_pred['log_variances']
                     }
                 )
             else:
@@ -278,7 +280,7 @@ class AleatoricMCDropoutBERTStudent(tf.keras.Model):
 
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-        self.compiled_metrics.update_state(y, y_pred.probs)
+        self.compiled_metrics.update_state(y, y_pred['mean_probs'])
 
         return {m.name: m.result() for m in self.metrics}
 
@@ -286,20 +288,18 @@ class AleatoricMCDropoutBERTStudent(tf.keras.Model):
         x, y = data
 
         y_pred = self(x, training=False)
-        if not isinstance(y_pred, CustomTFSequenceClassifierOutput):
-            raise TypeError("The output of the model is not CustomTFSequenceClassifierOutput.")
         if self.custom_loss_fn is not None:
             loss = self.custom_loss_fn(
                 y,
                 {
-                    'logits': y_pred.logits,
-                    'log_variances': y_pred.log_variances
+                    'mean_logits': y_pred['mean_logits'],
+                    'log_variances': y_pred['log_variances']
                 }
             )
         else:
             raise ValueError("No custom loss function provided!")
 
-        self.compiled_metrics.update_state(y, y_pred.probs)
+        self.compiled_metrics.update_state(y, y_pred['mean_probs'])
 
         return {m.name: m.result() for m in self.metrics}
 

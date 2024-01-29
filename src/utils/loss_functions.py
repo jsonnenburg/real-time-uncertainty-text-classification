@@ -123,9 +123,10 @@ def bce_loss(y_true, y_pred) -> tf.Tensor:
     """
     Binary cross entropy loss function for fine-tuning the student model.
     """
+    y_true = tf.expand_dims(y_true, -1)
     try:
         logits = y_pred['mean_logits']
-        loss = tf.keras.losses.binary_crossentropy(y_true, logits, from_logits=True)
+        loss = tf.reduce_sum(tf.keras.losses.binary_crossentropy(y_true, logits, from_logits=True))
         return loss
     except KeyError:
         raise KeyError("y_pred must be a dict with key 'mean_logits'.")
@@ -137,6 +138,9 @@ def gaussian_mle_loss(y_true, y_pred) -> tf.Tensor:
     """
     try:
         mean_logits, log_variances = y_pred['mean_logits'], y_pred['log_variances']
+        # tile to size of y_true -> dictated by m and k
+        mean_logits = tf.tile(mean_logits, tf.constant([1, 50], dtype=tf.int32))
+        log_variances = tf.tile(log_variances, tf.constant([1, 50], dtype=tf.int32))
         loss = tf.reduce_mean(0.5 * tf.exp(-log_variances) * tf.norm(y_true - mean_logits, ord='euclidean') + 0.5 * log_variances)
         # TODO: check if this corresponds to Eq. 10 in Shen et al. (2021)
         # TODO: it doesn't!
