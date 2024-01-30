@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from transformers import BertConfig, TFBertModel
 import tensorflow as tf
 from transformers.modeling_tf_outputs import TFSequenceClassifierOutput
@@ -80,8 +78,6 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
 
         with tf.GradientTape() as tape:
             y_pred = self(x, training=True)
-            if not isinstance(y_pred, CustomTFSequenceClassifierOutput):
-                raise TypeError("The output of the model is not CustomTFSequenceClassifierOutput.")
             if self.custom_loss_fn is not None:
                 loss = self.custom_loss_fn(
                     y,
@@ -103,8 +99,6 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
         x, y = data
 
         y_pred = self(x, training=False)
-        if not isinstance(y_pred, CustomTFSequenceClassifierOutput):
-            raise TypeError("The output of the model is not CustomTFSequenceClassifierOutput.")
         if self.custom_loss_fn is not None:
             loss = self.custom_loss_fn(
                 y,
@@ -120,12 +114,13 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
 
         return {m.name: m.result() for m in self.metrics}
 
-    def cached_mc_dropout_predict(self, inputs, dropout_rate: Optional[float] = None, n=20) -> dict:
+    def mc_dropout_predict(self, inputs, n=50) -> dict:
+        """
+        Performs MC dropout sampling over the logit space.
+        Implemented via "caching" the body output and sampling repeatedly from the output heads.
+        """
         bert_outputs = self.bert(inputs, training=False)
         pooled_output = bert_outputs.pooler_output
-
-        if dropout_rate is not None:
-            self.dropout.rate = dropout_rate
 
         all_logits = []
         all_probs = []
@@ -152,224 +147,11 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
 
         return {'logits': all_logits,
                 'probs': all_probs,
-                'log_variances': all_log_variances,
+                'log_variances': all_log_variances,  # the predicted log variances
                 'mean_predictions': mean_predictions,
                 'mean_variances': mean_variances,
-                'var_predictions': var_predictions,
+                'var_predictions': var_predictions,  # the actual variances of the logits
                 'total_uncertainty': total_uncertainty,
-                }
-
-    def minimal_cached_mc_dropout_predict(self, inputs, dropout_rate: Optional[float] = None, n=20) -> dict:
-        bert_outputs = self.bert(inputs, training=False)
-        pooled_output = bert_outputs.pooler_output
-
-        if dropout_rate is not None:
-            self.dropout.rate = dropout_rate
-
-        all_logits = []
-        all_probs = []
-        all_log_variances = []
-        for i in range(n):
-            tf.random.set_seed(range(n)[i])
-            dropout_output = self.dropout(pooled_output, training=True)
-            logits = self.classifier(dropout_output)
-            probs = tf.nn.sigmoid(logits)
-            log_variances = self.log_variance_predictor(dropout_output)
-            all_logits.append(logits)
-            all_log_variances.append(log_variances)
-
-        all_logits = tf.stack(all_logits, axis=0)
-        all_probs = tf.stack(all_probs, axis=0)
-        all_log_variances = tf.stack(all_log_variances, axis=0)
-        mean_predictions = tf.reduce_mean(all_logits, axis=0)
-        mean_log_variances = tf.math.reduce_variance(all_log_variances, axis=0)
-
-        return {'probs': all_probs,
-                'mean_logits': mean_predictions,
-                'mean_log_variances': mean_log_variances
-                }
-
-    def get_config(self):
-        config = {
-            'bert_config': self.bert.config.to_dict(),
-            'custom_loss_fn_name': self.custom_loss_fn.__name__ if self.custom_loss_fn else None,
-        }
-        return config
-
-    @classmethod
-    def from_config(cls, config, custom_objects=None):
-        bert_config = BertConfig.from_dict(config['bert_config'])
-
-        custom_loss_fn = None
-        if config['custom_loss_fn_name']:
-            if config['custom_loss_fn_name'] in globals():
-                custom_loss_fn = globals()[config['custom_loss_fn_name']]
-            else:
-                raise ValueError(f"Unknown custom loss function: {config['custom_loss_fn_name']}")
-
-        new_model = cls(bert_config, custom_loss_fn=custom_loss_fn)
-        return new_model
-
-
-class AleatoricMCDropoutBERTStudent(tf.keras.Model):
-    def __init__(self, config, custom_loss_fn=None, T=50):
-        super(AleatoricMCDropoutBERTStudent, self).__init__()
-        self.bert = TFBertModel.from_pretrained(
-            'bert-base-uncased',
-            config=config
-        )
-        self.dropout = tf.keras.layers.Dropout(
-            rate=config.classifier_dropout
-        )
-        self.classifier = tf.keras.layers.Dense(
-            units=1,
-            kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=config.initializer_range),
-            name="classifier",
-            trainable=True
-        )
-        self.log_variance_predictor = tf.keras.layers.Dense(
-            units=1,
-            kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=config.initializer_range),
-            # activation='linear',
-            name="log_variance",
-            trainable=True
-        )
-
-        if custom_loss_fn:
-            self.custom_loss_fn = custom_loss_fn
-        else:
-            self.custom_loss_fn = tf.keras.losses.BinaryCrossentropy()
-
-        self.T = T
-
-    def call(self, inputs, training=False, mask=None):
-        bert_outputs = self.bert(inputs, training=False)
-        pooled_output = bert_outputs.pooler_output
-
-        all_logits = []
-        for i in range(self.T):
-            tf.random.set_seed(range(self.T)[i])
-            dropout_output = self.dropout(pooled_output, training=True)
-            logits = self.classifier(dropout_output)
-            all_logits.append(logits)
-
-        all_logits = tf.stack(all_logits, axis=0)
-        mean_logits = tf.reduce_mean(all_logits, axis=0)
-        mean_probs = tf.nn.sigmoid(mean_logits)
-        log_variances = tf.math.log(tf.math.reduce_variance(all_logits, axis=0))
-
-        return {'mean_logits': mean_logits,
-                'mean_probs': mean_probs,
-                'log_variances': log_variances}
-
-    def train_step(self, data):
-        x, y = data
-
-        with tf.GradientTape() as tape:
-            y_pred = self(x, training=True)
-            if self.custom_loss_fn is not None:
-                loss = self.custom_loss_fn(
-                    y,
-                    {
-                        'mean_logits': y_pred['mean_logits'],
-                        'log_variances': y_pred['log_variances']
-                    }
-                )
-            else:
-                raise ValueError("No custom loss function provided!")
-
-        gradients = tape.gradient(loss, self.trainable_variables)
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-        self.compiled_metrics.update_state(y, y_pred['mean_probs'])
-
-        return {m.name: m.result() for m in self.metrics}
-
-    def test_step(self, data):
-        x, y = data
-
-        y_pred = self(x, training=False)
-        if self.custom_loss_fn is not None:
-            loss = self.custom_loss_fn(
-                y,
-                {
-                    'mean_logits': y_pred['mean_logits'],
-                    'log_variances': y_pred['log_variances']
-                }
-            )
-        else:
-            raise ValueError("No custom loss function provided!")
-
-        self.compiled_metrics.update_state(y, y_pred['mean_probs'])
-
-        return {m.name: m.result() for m in self.metrics}
-
-    def cached_mc_dropout_predict(self, inputs, dropout_rate: Optional[float] = None, n=20) -> dict:
-        bert_outputs = self.bert(inputs, training=False)
-        pooled_output = bert_outputs.pooler_output
-
-        if dropout_rate is not None:
-            self.dropout.rate = dropout_rate
-
-        all_logits = []
-        all_probs = []
-        all_log_variances = []
-        for i in range(n):
-            tf.random.set_seed(range(n)[i])
-            dropout_output = self.dropout(pooled_output, training=True)
-            logits = self.classifier(dropout_output)
-            probs = tf.nn.sigmoid(logits)
-            log_variances = self.log_variance_predictor(dropout_output)
-            all_logits.append(logits)
-            all_probs.append(probs)
-            all_log_variances.append(log_variances)
-
-        all_logits = tf.stack(all_logits, axis=0)
-        all_probs = tf.stack(all_probs, axis=0)
-        all_log_variances = tf.stack(all_log_variances, axis=0)
-        mean_predictions = tf.reduce_mean(all_logits, axis=0)
-        var_predictions = tf.math.reduce_variance(all_logits, axis=0)
-
-        epistemic_uncertainty, aleatoric_uncertainty, total_uncertainty = compute_total_uncertainty(all_logits,
-                                                                                                    all_log_variances)
-        mean_variances = aleatoric_uncertainty
-
-        return {'logits': all_logits,
-                'probs': all_probs,
-                'log_variances': all_log_variances,
-                'mean_predictions': mean_predictions,
-                'mean_variances': mean_variances,
-                'var_predictions': var_predictions,
-                'total_uncertainty': total_uncertainty,
-                }
-
-    def minimal_cached_mc_dropout_predict(self, inputs, dropout_rate: Optional[float] = None, n=20) -> dict:
-        bert_outputs = self.bert(inputs, training=False)
-        pooled_output = bert_outputs.pooler_output
-
-        if dropout_rate is not None:
-            self.dropout.rate = dropout_rate
-
-        all_logits = []
-        all_probs = []
-        all_log_variances = []
-        for i in range(n):
-            tf.random.set_seed(range(n)[i])
-            dropout_output = self.dropout(pooled_output, training=True)
-            logits = self.classifier(dropout_output)
-            probs = tf.nn.sigmoid(logits)
-            log_variances = self.log_variance_predictor(dropout_output)
-            all_logits.append(logits)
-            all_log_variances.append(log_variances)
-
-        all_logits = tf.stack(all_logits, axis=0)
-        all_probs = tf.stack(all_probs, axis=0)
-        all_log_variances = tf.stack(all_log_variances, axis=0)
-        mean_predictions = tf.reduce_mean(all_logits, axis=0)
-        mean_log_variances = tf.math.reduce_variance(all_log_variances, axis=0)
-
-        return {'probs': all_probs,
-                'mean_logits': mean_predictions,
-                'mean_log_variances': mean_log_variances
                 }
 
     def get_config(self):
