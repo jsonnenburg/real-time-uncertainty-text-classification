@@ -16,7 +16,7 @@ from src.distribution_distillation.uncertainty_distillation import get_predictiv
 from src.utils.logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset, \
     bert_preprocess, get_tf_dataset
-from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT, AleatoricMCDropoutBERTStudent
+from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
 from src.training.train_bert_teacher import serialize_metric
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
@@ -39,8 +39,8 @@ def compute_student_metrics(model, eval_data):
     for batch in eval_data:
         features, labels = batch
         outputs = model(features, training=False)
-        total_logits.extend(outputs['mean_logits'])
-        total_log_variances.extend(outputs['log_variances'])
+        total_logits.extend(outputs.logits)
+        total_log_variances.extend(outputs.log_variances)
         total_labels.extend(labels.numpy())
     total_time = time.time() - start_time
     average_inference_time = total_time / len(total_labels) * 1000
@@ -51,7 +51,7 @@ def compute_student_metrics(model, eval_data):
     if total_logits is not None and total_labels is not None:
         prob_predictions_np = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
         class_predictions_np = prob_predictions_np.round(0).astype(int)
-        variances = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
+        variances_np = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
         labels_np = all_labels
 
         acc = accuracy_score(labels_np, class_predictions_np)
@@ -65,7 +65,7 @@ def compute_student_metrics(model, eval_data):
             "y_true": labels_np.tolist(),
             "y_pred": class_predictions_np.tolist(),
             "y_prob": prob_predictions_np.tolist(),
-            "variance": variances.tolist(),
+            "predictive_variance": variances_np.tolist(),
             "average_inference_time": serialize_metric(average_inference_time),
             "accuracy_score": serialize_metric(acc),
             "precision_score": serialize_metric(prec),
@@ -80,11 +80,10 @@ def compute_student_metrics(model, eval_data):
 
 
 def compute_student_mc_dropout_metrics(model, eval_data, n):
-    # NOT NEEDED ANYMORE FOR STUDENT MODEL THAT ALWAYS OUTPUTS (mean_logits, mean_log_variances)
     total_logits = []
     total_mean_logits = []
     total_mean_variances = []
-    total_variances = []
+    total_var_logits = []
     total_labels = []
 
     total_uncertainties = []
@@ -92,16 +91,16 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
     start_time = time.time()
     for batch in eval_data:
         features, labels = batch
-        outputs = model.cached_mc_dropout_predict(features, n=n)
+        outputs = model.mc_dropout_predict(features, n=n)
         logits = outputs['logits']
-        mean_predictions = outputs['mean_predictions']
+        mean_logits = outputs['mean_logits']
         mean_variances = outputs['mean_variances']
-        var_predictions = outputs['var_predictions']
+        var_logits = outputs['var_logits']
         total_uncertainty = outputs['total_uncertainty']
         total_logits.append(logits.numpy())
-        total_mean_logits.extend(mean_predictions.numpy())
+        total_mean_logits.extend(mean_logits.numpy())
         total_mean_variances.extend(mean_variances.numpy())
-        total_variances.extend(var_predictions.numpy())
+        total_var_logits.extend(var_logits.numpy())
         total_uncertainties.extend(total_uncertainty.numpy())
         total_labels.extend(labels.numpy())
     total_time = time.time() - start_time
@@ -135,7 +134,7 @@ def compute_student_mc_dropout_metrics(model, eval_data, n):
             "y_true": labels_np.astype(int).tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
-            "variance": mean_variances_np.tolist(),
+            "predictive_variance": mean_variances_np.tolist(),
             "total_uncertainty": total_uncertainties_np.tolist(),
             "average_inference_time": serialize_metric(average_inference_time),
             "accuracy_score": serialize_metric(acc),
@@ -164,12 +163,12 @@ def main(args):
                                               teacher_config['classifier_dropout'])
 
     # initialize student model
-    student_model = AleatoricMCDropoutBERTStudent(student_model_config, custom_loss_fn=shen_loss)
+    student_model = AleatoricMCDropoutBERT(student_model_config, custom_loss_fn=shen_loss(n_samples=args.m*args.k))
     # compile with shen loss
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.learning_rate)
     student_model.compile(
         optimizer=optimizer,
-        loss={'classifier': shen_loss, 'log_variance': null_loss},
+        loss={'classifier': shen_loss(n_samples=args.m*args.k), 'log_variance': null_loss},
         metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
         run_eagerly=True
     )
@@ -195,8 +194,8 @@ def main(args):
         data_dir = os.path.join(args.transfer_data_dir, 'aleatoric_and_epistemic', f'm{args.m}_k{args.k}')
 
     dataset = Dataset()
-    dataset.train = pd.read_csv(os.path.join(data_dir, 'transfer_train_grouped.csv'), sep='\t')
-    dataset.val = pd.read_csv(os.path.join(data_dir, 'transfer_test_grouped.csv'), sep='\t')
+    dataset.train = pd.read_csv(os.path.join(data_dir, 'transfer_train.csv'), sep='\t')
+    dataset.val = pd.read_csv(os.path.join(data_dir, 'transfer_test.csv'), sep='\t')
     dataset.test = pd.read_csv(os.path.join(data_dir, 'test.csv'), sep='\t')  # ADDED ORIGINAL TEST SET HERE
 
     subset_size = 100

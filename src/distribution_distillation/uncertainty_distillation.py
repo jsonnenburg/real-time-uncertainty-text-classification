@@ -52,7 +52,7 @@ def compute_student_metrics(model, eval_data):
     if total_logits is not None and total_labels is not None:
         prob_predictions_np = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
         class_predictions_np = prob_predictions_np.round(0).astype(int)
-        variances = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
+        variances_np = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
         labels_np = all_labels
 
         acc = accuracy_score(labels_np, class_predictions_np)
@@ -66,7 +66,7 @@ def compute_student_metrics(model, eval_data):
             "y_true": labels_np.tolist(),
             "y_pred": class_predictions_np.tolist(),
             "y_prob": prob_predictions_np.tolist(),
-            "aleatoric_uncertainty": variances.tolist(),
+            "predictive_variance": variances_np.tolist(),
             "average_inference_time": serialize_metric(average_inference_time),
             "accuracy_score": serialize_metric(acc),
             "precision_score": serialize_metric(prec),
@@ -80,11 +80,11 @@ def compute_student_metrics(model, eval_data):
         logger.error("Metrics could not be computed successfully.")
 
 
-def compute_student_mc_dropout_metrics(model, eval_data, n, dropout_rate: Optional[float] = None):
+def compute_student_mc_dropout_metrics(model, eval_data, n):
     total_logits = []
     total_mean_logits = []
     total_mean_variances = []
-    total_variances = []
+    total_var_logits = []
     total_labels = []
 
     total_uncertainties = []
@@ -92,16 +92,16 @@ def compute_student_mc_dropout_metrics(model, eval_data, n, dropout_rate: Option
     start_time = time.time()
     for batch in eval_data:
         features, labels = batch
-        outputs = model.cached_mc_dropout_predict(features, n=n, dropout_rate=dropout_rate)
+        outputs = model.mc_dropout_predict(features, n=n)
         logits = outputs['logits']
-        mean_predictions = outputs['mean_predictions']
+        mean_logits = outputs['mean_logits']
         mean_variances = outputs['mean_variances']
-        var_predictions = outputs['var_predictions']
+        var_logits = outputs['var_logits']
         total_uncertainty = outputs['total_uncertainty']
         total_logits.append(logits.numpy())
-        total_mean_logits.extend(mean_predictions.numpy())
+        total_mean_logits.extend(mean_logits.numpy())
         total_mean_variances.extend(mean_variances.numpy())
-        total_variances.extend(var_predictions.numpy())
+        total_var_logits.extend(var_logits.numpy())
         total_uncertainties.extend(total_uncertainty.numpy())
         total_labels.extend(labels.numpy())
     total_time = time.time() - start_time
@@ -135,7 +135,7 @@ def compute_student_mc_dropout_metrics(model, eval_data, n, dropout_rate: Option
             "y_true": labels_np.astype(int).tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
-            "aleatoric_uncertainty": mean_variances_np.tolist(),
+            "predictive_variance": mean_variances_np.tolist(),
             "total_uncertainty": total_uncertainties_np.tolist(),
             "average_inference_time": serialize_metric(average_inference_time),
             "accuracy_score": serialize_metric(acc),
@@ -174,12 +174,12 @@ def main(args):
                                                   teacher_config['classifier_dropout'])
 
     # initialize student model
-    student_model = AleatoricMCDropoutBERT(student_model_config, custom_loss_fn=shen_loss)
+    student_model = AleatoricMCDropoutBERT(student_model_config, custom_loss_fn=shen_loss(n_samples=args.m*args.k))
     # compile with shen loss
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.learning_rate)
     student_model.compile(
         optimizer=optimizer,
-        loss={'classifier': shen_loss, 'log_variance': null_loss},
+        loss={'classifier': shen_loss(n_samples=args.m*args.k), 'log_variance': null_loss},
         metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
         run_eagerly=True
     )
@@ -193,7 +193,7 @@ def main(args):
         "n": args.n,
         "hidden_dropout_prob": teacher_config['hidden_dropout_prob'],
         "attention_probs_dropout_prob": teacher_config['attention_probs_dropout_prob'],
-        "classifier_dropout": args.final_layer_dropout_rate if args.final_layer_dropout_rate is not None else teacher_config['classifier_dropout']
+        "classifier_dropout": teacher_config['classifier_dropout']
     }
     model_dir = os.path.join(args.output_dir, 'model')
     os.makedirs(model_dir, exist_ok=True)
@@ -278,7 +278,7 @@ def main(args):
 
     # obtain "cached" MC dropout predictions on eval set
     logger.info('Computing MC dropout metrics...')
-    metrics = compute_student_mc_dropout_metrics(student_model, test_data, args.n, args.final_layer_dropout_rate)
+    metrics = compute_student_mc_dropout_metrics(student_model, test_data, args.n)
     with open(os.path.join(result_dir, 'student_mc_dropout_metrics.json'), 'w') as f:
         json.dump(metrics, f)
     logger.info(
@@ -336,8 +336,6 @@ if __name__ == '__main__':
     parser.add_argument('--max_length', type=int, default=48)
     parser.add_argument('--remove_dropout_layers', action='store_true',
                         help="No dropout layers (dropout prob. set to 0), as per Shen et al (2021).")
-    parser.add_argument('--final_layer_dropout_rate', type=float, default=None,
-                        help="Dropout rate for final layer. If none is provided, dropout rate is inferred from config.")
     parser.add_argument('--n', type=int, default=20,
                         help="Number of MC dropout samples to compute for student MCD metrics.")
     parser.add_argument('--output_dir', type=str, default="out")
