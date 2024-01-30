@@ -8,85 +8,13 @@ def null_loss(y_true, y_pred) -> tf.Tensor:
     return tf.zeros_like(y_true)
 
 
-def archived_aleatoric_loss(y_true, y_pred) -> tf.Tensor:
-    """
-    Aleatoric uncertainty loss function from Kendall & Gal (2017) for fine-tuning the teacher model.
-    """
-    if not isinstance(y_pred, dict) or 'logits' not in y_pred or 'log_variances' not in y_pred:
-        raise ValueError("y_pred must be a dictionary with 'logits' and 'log_variances' keys.")
-
-    logits = y_pred['logits']
-    log_variances = y_pred['log_variances']
-
-    # following kendall2017, this is logits + std.dev * N(0, 1)
-    x_hat = logits + tf.sqrt(tf.exp(log_variances)) * tf.random.normal(shape=tf.shape(logits), dtype=tf.float32)
-
-
-
-    bce = tf.losses.BinaryCrossentropy(from_logits=True)
-    cross_entropy_loss = bce(y_true, logits)
-
-    precision = tf.exp(-log_variances)
-    adjusted_loss = (precision * cross_entropy_loss) + log_variances
-
-    return tf.reduce_mean(adjusted_loss)
-
-
-def aleatoric_loss(y_true, y_pred) -> tf.Tensor:
-    """
-    Aleatoric uncertainty loss function from Kendall & Gal (2017) for fine-tuning the teacher model (Eq. 12).
-
-    https://stats.stackexchange.com/questions/573491/using-logsumexp-in-softmax
-    https://lips.cs.princeton.edu/computing-log-sum-exp/
-
-    # with logit and variance output for each batch, perform MC integration
-    # both are (batch size, 1)
-
-    # use cached MC dropout predictions
-    # with mean logits and mean std. dev of each sequence, compute xhat_i,t (batch size, number of MC samples) by
-    # sampling from N(0, 1) for each MC dropout sample t for each sequence i
-
-    # with x_hat shape (i, t, c') and y_true shape (i, c), compute the loss for the whole batch
-    # note: c' is the number of classes, c is the number of classes for the task
-    """
-    mean_logits = y_pred['mean_logits']  # Shape: (batch_size, 1)
-    mean_log_variances = y_pred['mean_log_variances']  # Shape: (batch_size, 1)
-
-    batch_size = tf.shape(mean_logits)[0]
-    num_MC_samples = 20  # needs to be consistent across loss and cached mc dropout predict
-
-    # Expand mean_logits and log_variances to include the MC sample dimension
-    mean_logits_expanded = tf.tile(mean_logits, [1, num_MC_samples])  # Shape: (batch_size, num_MC_samples)
-    std_dev = tf.sqrt(tf.exp(mean_log_variances))  # Standard deviation from log variance
-    std_dev_expanded = tf.tile(std_dev, [1, num_MC_samples])  # Shape: (batch_size, num_MC_samples)
-
-    # Sample from standard normal distribution
-    epsilon = tf.random.normal(shape=(batch_size, 20))
-    # Compute the corrupted logits (x_hat)
-    x_hat = mean_logits_expanded + std_dev_expanded * epsilon  # Shape: (batch_size, num_MC_samples)
-    # Compute the corrupted probabilities
-    sigmoid_probs = tf.nn.sigmoid(x_hat)
-
-    # Transform y_true into shape (batch_size, num_MC_samples)
-    y_true_MC_dropout = tf.tile(tf.expand_dims(y_true, 1), tf.constant([1, num_MC_samples], dtype=tf.int32))
-
-    # Compute the probabilities for the true labels
-    probs = tf.where(y_true_MC_dropout == 1, sigmoid_probs, 1 - sigmoid_probs)  # output shape: (batch_size, num_MC_samples)
-
-    # Compute the mean probability for each sequence
-    mean_probs = tf.reduce_mean(probs, axis=1)  # output shape: (batch_size,)
-
-    # Compute the log probabilities for the mean logits
-    log_mean_probs = tf.math.log(mean_probs)  # output shape: (batch_size,)
-
-    # Negative log likelihood loss for the whole batch
-    loss = -tf.reduce_mean(log_mean_probs)  # output shape: (1,)
-
-    return loss
-
-
 # The following was adapted from https://github.com/kyle-dorman/bayesian-neural-network-blogpost/tree/master.
 def bayesian_binary_crossentropy(T):
+    """
+    The aleatoric loss function as defined by Kendall & Gal (2017) in Eq. 10 for fine-tuning the aleatoric uncertainty BERT teacher.
+
+    :param T: The number of Monte Carlo samples to take.
+    """
     def bayesian_binary_crossentropy_internal(y_true, y_pred):
         y_true = tf.expand_dims(y_true, -1)
         pred = y_pred['logits']
@@ -111,6 +39,7 @@ def bayesian_binary_crossentropy(T):
 
     return bayesian_binary_crossentropy_internal
 
+
 # Gaussian binary cross entropy
 def gaussian_binary_crossentropy(true, pred, std, undistorted_loss):
     std_sample = tf.random.normal(shape=tf.shape(true), stddev=std)
@@ -132,40 +61,39 @@ def bce_loss(y_true, y_pred) -> tf.Tensor:
         raise KeyError("y_pred must be a dict with key 'mean_logits'.")
 
 
-def gaussian_mle_loss(y_true, y_pred) -> tf.Tensor:
+def gaussian_mle_loss(y_true, y_pred, n_samples: int) -> tf.Tensor:
     """
     Gaussian MLE loss function from Shen et al. (2021) for fine-tuning the student model on the teacher's predictions.
+
+    :param n_samples: The number of predictive samples generated for the teacher model, as determined by m and k.
     """
-    try:
-        mean_logits, log_variances = y_pred['mean_logits'], y_pred['log_variances']
-        # tile to size of y_true -> dictated by m and k
-        mean_logits = tf.tile(mean_logits, tf.constant([1, 50], dtype=tf.int32))
-        log_variances = tf.tile(log_variances, tf.constant([1, 50], dtype=tf.int32))
-        loss = tf.reduce_mean(0.5 * tf.exp(-log_variances) * tf.norm(y_true - mean_logits, ord='euclidean') + 0.5 * log_variances)
-        # TODO: check if this corresponds to Eq. 10 in Shen et al. (2021)
-        # TODO: it doesn't!
-        return loss
-    except KeyError:
-        raise KeyError("y_pred must be a dict with keys 'mean_logits' and 'log_variances'.")
+    logits, log_variances = y_pred['logits'], y_pred['log_variances']
+
+    logits = tf.tile(logits, tf.constant([1, n_samples], dtype=tf.int32))
+    log_variances = tf.tile(log_variances, tf.constant([1, n_samples], dtype=tf.int32))
+
+    loss = tf.reduce_mean(0.5 * tf.exp(-log_variances) * tf.norm(y_true - logits, ord='euclidean') + 0.5 * log_variances)
+
+    return loss
 
 
-def shen_loss(y_true, y_pred) -> tf.Tensor:
-    """
-    Transfer learning loss function from Shen et al. (2021) for fine-tuning the student model.
-    Weight corresponds to Lambda in the paper.
+def shen_loss(loss_weight: int = 1, n_samples: int = 50):
+    def shen_loss_internal(y_true, y_pred) -> tf.Tensor:
+        """
+        Transfer learning loss function from Shen et al. (2021) for fine-tuning the student model.
+        Weight corresponds to Lambda in the paper.
 
-    y_true = Tuple(actual ground truth - CLASS LABELS, teacher predictive sample - LOGITS)
-    y_pred = dict with keys 'logits' and 'log_variances', the outputs of the student model heads
-    """
-    weight = tf.convert_to_tensor(1, dtype=tf.float32)
+        y_true = Tuple(actual ground truth - CLASS LABELS, teacher predictive sample - LOGITS)
+        y_pred = dict with keys 'logits' and 'log_variances', the outputs of the student model heads
+        """
+        weight = tf.convert_to_tensor(loss_weight, dtype=tf.float32)
 
-    try:
         y_true, y_teacher = y_true[0], y_true[1]
 
         Lt = bce_loss(y_true, y_pred)
-        Ls = gaussian_mle_loss(y_teacher, y_pred)
+        Ls = gaussian_mle_loss(y_teacher, y_pred, n_samples)
         Ltotal = Ls + weight * Lt
 
         return Ltotal
-    except KeyError:
-        raise KeyError("y_true must be a dict with keys 'labels' and 'predictions'.")
+
+    return shen_loss_internal
