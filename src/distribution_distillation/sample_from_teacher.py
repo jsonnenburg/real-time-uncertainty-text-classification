@@ -118,27 +118,24 @@ def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
         sigma_tilde = tf.reduce_mean(sigma_hat, axis=0)
         sigma_tilde_reshaped = tf.reshape(sigma_tilde, [1, -1, 1])  # reshape to (1, batch_size, 1)
 
-        eps = tf.random.normal(shape=[k, mu_t.shape[1], mu_t.shape[2]])  # what should the shape be? (k, batch_size, num_classes)
-        for i in range(k):
-            y_t = mu_t + (sigma_tilde_reshaped * eps[i, :, :])
-            # y_t should be (k, batch_size, num_classes)
-            for j in range(m):
-                # for each original sequence, we now save m*k augmented sequences
-                for seq_idx in range(features['input_ids'].shape[0]):  # iterate over each sequence in the batch
-                    # extract individual sequence, label, and prediction
-                    sequence = text[seq_idx].numpy().decode('utf-8')
-                    label = labels[seq_idx].numpy()
-                    prediction = y_t[j, seq_idx, :].numpy()[0]  # shape should be (num_classes,1)
-                    # prediction is shape (batch_size, )
-                    # append individual sequence, label, and prediction to augmented_data
-                    augmented_data['sequences'].append(sequence)
-                    augmented_data['labels'].append(label)
-                    augmented_data['predictions'].append(prediction)
+        eps = tf.random.normal(
+            shape=[k, mu_t.shape[1], mu_t.shape[2]])  # what should the shape be? (k, batch_size, num_classes)
 
-            # TODO: switch for loops around so that we end up with augmented sequences grouped by original sequence
+        for seq_idx in range(features['input_ids'].shape[0]):  # iterate over each sequence in the batch
+            sequence = text[seq_idx].numpy().decode('utf-8')
+            label = labels[seq_idx].numpy()
+            all_predictions_for_sequence = []
 
-    # convert augmented_data to a data frame
-    # columns = ['sequence', 'ground_truth_label', 'teacher_predicted_label']
+            for i in range(m):
+                for j in range(k):
+                    y_t = mu_t + (sigma_tilde_reshaped * eps[j, :, :])  # y_t should be (m, batch_size, num_classes)
+                    prediction = y_t[i, seq_idx, :].numpy()[0]  # scalar
+                    all_predictions_for_sequence.append(prediction)
+
+            augmented_data['sequences'].append(sequence)
+            augmented_data['labels'].append(label)
+            augmented_data['predictions'].append(all_predictions_for_sequence)
+
     transfer_df = pd.DataFrame(augmented_data)
     return transfer_df
 
