@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SshConfigs">
+    <configs>
+      <sshConfig authType="PASSWORD" host="gruenau1.informatik.hu-berlin.de" id="7a8d799c-bed3-47bb-bf00-6a64c5494740" port="22" nameFormat="DESCRIPTIVE" username="sonnenbj" useOpenSSHConfig="true" />
+    </configs>
+  </component>
+</project>

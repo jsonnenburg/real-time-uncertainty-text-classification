@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="e48faf43-534e-483d-8c7a-e0beef7551b9" name="gruenau1">
+        <fileTransfer rootFolder="/vol/fob-vol1/nebenf23/sonnenbj" accessType="SFTP" host="gruenau1.informatik.hu-berlin.de" port="22" sshConfigId="7a8d799c-bed3-47bb-bf00-6a64c5494740" sshConfig="sonnenbj@gruenau1.informatik.hu-berlin.de:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>

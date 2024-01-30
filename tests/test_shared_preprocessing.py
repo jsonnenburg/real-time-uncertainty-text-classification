@@ -1,26 +1,16 @@
 import pytest
 
-from src.data.robustness_study.shared_data_preprocessing import GeneralTextPreprocessor
+from src.data.robustness_study.shared_data_preprocessing import *
 
 
-@pytest.fixture
-def preprocessor():
-    return GeneralTextPreprocessor()
-
-
-def test_remove_stopwords(preprocessor: GeneralTextPreprocessor):
-    text = "this is a test"
-    assert preprocessor.remove_stopwords(text) == "test"
-
-
-def test_remove_multiple_spaces(preprocessor: GeneralTextPreprocessor):
+def test_remove_multiple_spaces():
     text = "this  is a    test"
-    assert preprocessor.remove_multiple_spaces(text) == "this is a test"
+    assert remove_multiple_spaces(text) == "this is a test"
 
 
-def test_replace_emoji(preprocessor: GeneralTextPreprocessor):
+def test_replace_emoji():
     text = "this is a test 😂"
-    assert preprocessor.replace_emoji(text) == "this is a test face_with_tears_of_joy"
+    assert replace_emoji(text) == "this is a test face_with_tears_of_joy"
 
 
 def test_remove_newlines(preprocessor: GeneralTextPreprocessor):
