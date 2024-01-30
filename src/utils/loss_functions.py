@@ -53,12 +53,11 @@ def bce_loss(y_true, y_pred) -> tf.Tensor:
     Binary cross entropy loss function for fine-tuning the student model.
     """
     y_true = tf.expand_dims(y_true, -1)
-    try:
-        logits = y_pred['mean_logits']
-        loss = tf.reduce_sum(tf.keras.losses.binary_crossentropy(y_true, logits, from_logits=True))
-        return loss
-    except KeyError:
-        raise KeyError("y_pred must be a dict with key 'mean_logits'.")
+    logits = y_pred['logits']
+
+    loss = tf.reduce_sum(tf.keras.losses.binary_crossentropy(y_true, logits, from_logits=True))
+
+    return loss
 
 
 def gaussian_mle_loss(y_true, y_pred, n_samples: int) -> tf.Tensor:

@@ -138,8 +138,8 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
         all_logits = tf.stack(all_logits, axis=0)
         all_probs = tf.stack(all_probs, axis=0)
         all_log_variances = tf.stack(all_log_variances, axis=0)
-        mean_predictions = tf.reduce_mean(all_logits, axis=0)
-        var_predictions = tf.math.reduce_variance(all_logits, axis=0)
+        mean_logits = tf.reduce_mean(all_logits, axis=0)
+        var_logits = tf.math.reduce_variance(all_logits, axis=0)
 
         epistemic_uncertainty, aleatoric_uncertainty, total_uncertainty = compute_total_uncertainty(all_logits,
                                                                                                     all_log_variances)
@@ -147,10 +147,10 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
 
         return {'logits': all_logits,
                 'probs': all_probs,
-                'log_variances': all_log_variances,  # the predicted log variances
-                'mean_predictions': mean_predictions,
-                'mean_variances': mean_variances,
-                'var_predictions': var_predictions,  # the actual variances of the logits
+                'log_variances': all_log_variances,  # predicted log variances
+                'mean_logits': mean_logits,  # mean of the logit samples
+                'mean_variances': mean_variances,  # mean of the variances computed from the log variance samples
+                'var_logits': var_logits,  # variances of the logits
                 'total_uncertainty': total_uncertainty,
                 }
 
