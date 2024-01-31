@@ -1,8 +1,23 @@
 import numpy as np
 from sklearn.metrics import brier_score_loss, log_loss
+import tensorflow as tf
 
 # y_pred: need class predictions
 # y_prob: need probabilities for positive class
+
+
+def serialize_metric(value):
+    if np.isscalar(value):
+        if np.isnan(value):
+            return 'NaN'
+        elif isinstance(value, np.ndarray) or isinstance(value, tf.Tensor):
+            return value.item()
+        elif type(value) is np.float32:
+            return value.item()
+        else:
+            return value
+    elif isinstance(value, np.ndarray):
+        return value.tolist()
 
 
 def safe_divide(numerator, denominator):

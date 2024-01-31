@@ -149,41 +149,30 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
     def mc_dropout_sample(self, inputs, n=50) -> dict:
         """
         Performs MC dropout sampling over the logit space.
-        TODO: rewrite for teacher (not used for student)
         """
         bert_outputs = self.bert(inputs, training=False)
         pooled_output = bert_outputs.pooler_output
 
         all_logits = []
-        all_probs = []
         all_log_variances = []
         for i in range(n):
             tf.random.set_seed(range(n)[i])
             dropout_output = self.dropout(pooled_output, training=True)
             logits = self.classifier(dropout_output)
-            probs = tf.nn.sigmoid(logits)
-            log_variances = self.log_variance_predictor(dropout_output)
+            log_variance = self.log_variance_predictor(dropout_output)
             all_logits.append(logits)
-            all_probs.append(probs)
-            all_log_variances.append(log_variances)
+            all_log_variances.append(log_variance)
+        all_logits = tf.stack(all_logits, axis=1)
+        all_probs = tf.nn.sigmoid(all_logits)
+        all_log_variances = tf.stack(all_log_variances, axis=1)
+        mean_logits = tf.reduce_mean(all_logits, axis=1)
+        mean_log_variances = tf.reduce_mean(all_log_variances, axis=1)
 
-        all_logits = tf.stack(all_logits, axis=0)
-        all_probs = tf.stack(all_probs, axis=0)
-        all_log_variances = tf.stack(all_log_variances, axis=0)
-        mean_logits = tf.reduce_mean(all_logits, axis=0)
-        var_logits = tf.math.reduce_variance(all_logits, axis=0)
-
-        epistemic_uncertainty, aleatoric_uncertainty, total_uncertainty = compute_total_uncertainty(all_logits,
-                                                                                                    all_log_variances)
-        mean_variances = aleatoric_uncertainty
-
-        return {'logits': all_logits,
-                'probs': all_probs,
-                'log_variances': all_log_variances,  # predicted log variances
-                'mean_logits': mean_logits,  # mean of the logit samples
-                'mean_variances': mean_variances,  # mean of the variances computed from the log variance samples
-                'var_logits': var_logits,  # variances of the logits
-                'total_uncertainty': total_uncertainty,
+        return {'logit_samples': all_logits,
+                'prob_samples': all_probs,
+                'log_variance_samples': all_log_variances,
+                'mean_logits': mean_logits,
+                'mean_log_variances': mean_log_variances,
                 }
 
     def get_config(self):

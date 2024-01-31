@@ -33,7 +33,7 @@ def get_predictions(model, eval_data):
     total_log_variances = []
     total_labels = []
     
-    # mc sampling
+    # mc samples
     total_prob_samples = []
 
     # iterate over all batches in eval_data

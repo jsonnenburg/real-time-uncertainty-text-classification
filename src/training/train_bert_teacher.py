@@ -17,9 +17,8 @@ from src.utils.logger_config import setup_logging
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess, get_tf_dataset
 
-from src.utils.inference import mc_dropout_predict
 from src.utils.metrics import (serialize_metric, accuracy_score, precision_score, recall_score, f1_score, nll_score,
-                               brier_score, pred_entropy_score, ece_score, bald_score)
+                               brier_score, ece_score, bald_score)
 from src.utils.loss_functions import null_loss, bayesian_binary_crossentropy
 from src.utils.data import SimpleDataLoader, Dataset
 from src.utils.training import HistorySaver
@@ -46,100 +45,92 @@ def compute_metrics(model, eval_data):
 
     all_labels = np.array(total_labels)
 
-    if total_logits is not None and total_labels is not None:
-        prob_predictions_np = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
-        class_predictions_np = prob_predictions_np.round(0).astype(int)
-        variances = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
-        labels_np = all_labels
+    y_prob = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
+    y_pred = y_prob.round(0).astype(int)
+    var = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
+    y_true = all_labels
 
-        acc = accuracy_score(labels_np, class_predictions_np)
-        prec = precision_score(labels_np, class_predictions_np)
-        rec = recall_score(labels_np, class_predictions_np)
-        f1 = f1_score(labels_np, class_predictions_np)
-        nll = nll_score(labels_np, prob_predictions_np)
-        bs = brier_score(labels_np, prob_predictions_np)
-        ece = ece_score(labels_np, class_predictions_np, prob_predictions_np)
-        return {
-            "y_true": labels_np.tolist(),
-            "y_pred": class_predictions_np.tolist(),
-            "y_prob": prob_predictions_np.tolist(),
-            "aleatoric_uncertainty": variances.tolist(),
-            "average_inference_time": serialize_metric(average_inference_time),
-            "accuracy_score": serialize_metric(acc),
-            "precision_score": serialize_metric(prec),
-            "recall_score": serialize_metric(rec),
-            "f1_score": serialize_metric(f1),
-            "nll_score": serialize_metric(nll),
-            "brier_score": serialize_metric(bs),
-            "ece_score": serialize_metric(ece)
-        }
-    else:
-        logger.error("Metrics could not be computed successfully.")
+    acc = accuracy_score(y_true, y_pred)
+    prec = precision_score(y_true, y_pred)
+    rec = recall_score(y_true, y_pred)
+    f1 = f1_score(y_true, y_pred)
+    nll = nll_score(y_true, y_prob)
+    bs = brier_score(y_true, y_prob)
+    ece = ece_score(y_true, y_pred, y_prob)
+    return {
+        "y_true": y_true.tolist(),
+        "y_pred": y_pred.tolist(),
+        "y_prob": y_prob.tolist(),
+        "predictive_variance": var.tolist(),
+        "average_inference_time": serialize_metric(average_inference_time),
+        "accuracy_score": serialize_metric(acc),
+        "precision_score": serialize_metric(prec),
+        "recall_score": serialize_metric(rec),
+        "f1_score": serialize_metric(f1),
+        "nll_score": serialize_metric(nll),
+        "brier_score": serialize_metric(bs),
+        "ece_score": serialize_metric(ece)
+    }
 
 
-def compute_mc_dropout_metrics(model, eval_data, n=20) -> dict:
+def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
     total_logits = []
-    total_mean_variances = []  # mean of the variances (log variance predictor output) over the MC samples
-    total_mean_logits = []  # mean of the logits (classifier output) over the MC samples
-    total_variances = []  # variance of the logits (classifier output) over the MC samples
+    total_probs = []
+    total_mean_logits = []
+    total_mean_log_variances = []
     total_labels = []
-
-    total_uncertainties = []
 
     start_time = time.time()
     for batch in eval_data:
         features, labels = batch
-        logits, mean_variances, mean_predictions, var_predictions, total_uncertainty = mc_dropout_predict(model, features, n=n)
+
+        samples = model.mc_dropout_sample(features, n=n)
+        logits = samples['logit_samples']
+        probs = samples['prob_samples']
+        mean_logits = samples['mean_logits']
+        mean_log_variances = samples['mean_log_variances']
         total_logits.append(logits.numpy())
-        total_mean_variances.extend(mean_variances.numpy())
-        total_mean_logits.extend(mean_predictions.numpy())
-        total_variances.extend(var_predictions.numpy())
-        total_uncertainties.extend(total_uncertainty.numpy())
+        total_probs.append(probs.numpy())
+        total_mean_logits.extend(mean_logits.numpy())
+        total_mean_log_variances.extend(mean_log_variances.numpy())
         total_labels.extend(labels.numpy())
     total_time = time.time() - start_time
     average_inference_time = total_time / len(total_labels) * 1000
     logger.info(f"Average inference time per sample: {average_inference_time:.0f} milliseconds.")
 
-    total_logits = np.concatenate(total_logits, axis=1)  # concatenate along the batch dimension
+    y_prob_samples = np.concatenate(total_probs, axis=0)
 
-    if total_mean_logits and total_labels:
-        all_labels = np.array(total_labels)
-        mean_prob_predictions_np = tf.nn.sigmoid(total_mean_logits).numpy().reshape(all_labels.shape)
-        mean_class_predictions_np = mean_prob_predictions_np.round(0).astype(int)
-        mean_variances_np = np.array(total_mean_variances).reshape(all_labels.shape)
-        total_uncertainties_np = np.array(total_uncertainties).reshape(all_labels.shape)
-        labels_np = all_labels
+    all_labels = np.array(total_labels)
+    
+    y_prob_mcd = tf.nn.sigmoid(total_mean_logits).numpy().reshape(all_labels.shape)
+    y_pred_mcd = y_prob_mcd.round(0).astype(int)
+    y_true = all_labels
 
-        sigmoid_logits = tf.nn.sigmoid(total_logits)
-        reshaped_logits = tf.reshape(sigmoid_logits, [-1, sigmoid_logits.shape[-1]])
-        batch_entropy_scores = pred_entropy_score(reshaped_logits)
-        avg_entropy = np.mean(batch_entropy_scores)
+    var_mcd = tf.exp(total_mean_log_variances).numpy().reshape(all_labels.shape)
 
-        acc = accuracy_score(labels_np, mean_class_predictions_np)
-        prec = precision_score(labels_np, mean_class_predictions_np)
-        rec = recall_score(labels_np, mean_class_predictions_np)
-        f1 = f1_score(labels_np, mean_class_predictions_np)
-        nll = nll_score(labels_np, mean_prob_predictions_np)
-        bs = brier_score(labels_np, mean_prob_predictions_np)
-        ece = ece_score(labels_np, mean_class_predictions_np, mean_prob_predictions_np)
-        return {
-            "y_true": labels_np.tolist(),
-            "y_pred": mean_class_predictions_np.tolist(),
-            "y_prob": mean_prob_predictions_np.tolist(),
-            "aleatoric_uncertainty": mean_variances_np.tolist(),
-            "total_uncertainty": total_uncertainties_np.tolist(),
-            "average_inference_time": serialize_metric(average_inference_time),
-            "accuracy_score": serialize_metric(acc),
-            "precision_score": serialize_metric(prec),
-            "recall_score": serialize_metric(rec),
-            "f1_score": serialize_metric(f1),
-            "nll_score": serialize_metric(nll),
-            "brier_score": serialize_metric(bs),
-            "avg_pred_entropy_score": serialize_metric(avg_entropy),
-            "ece_score": serialize_metric(ece),
-        }
-    else:
-        logger.error("MC dropout metrics could not be computed successfully.")
+    acc = accuracy_score(y_true, y_pred_mcd)
+    prec = precision_score(y_true, y_pred_mcd)
+    rec = recall_score(y_true, y_pred_mcd)
+    f1 = f1_score(y_true, y_pred_mcd)
+    nll = nll_score(y_true, y_prob_mcd)
+    bs = brier_score(y_true, y_prob_mcd)
+    ece = ece_score(y_true, y_pred_mcd, y_prob_mcd)
+    bald = bald_score(y_prob_samples)
+    return {
+        "y_true": y_true.tolist(),
+        "y_pred": y_pred_mcd.tolist(),
+        "y_prob": y_prob_mcd.tolist(),
+        "predictive_variance": var_mcd.tolist(),
+        "average_inference_time": serialize_metric(average_inference_time),
+        "accuracy_score": serialize_metric(acc),
+        "precision_score": serialize_metric(prec),
+        "recall_score": serialize_metric(rec),
+        "f1_score": serialize_metric(f1),
+        "nll_score": serialize_metric(nll),
+        "brier_score": serialize_metric(bs),
+        "ece_score": serialize_metric(ece),
+        "bald_score": bald.tolist()
+    }
 
 
 def generate_file_path(dir_name: str, identifier: str) -> str:
@@ -268,14 +259,14 @@ def train_model(paths: dict, data: dict, config, batch_size: int, learning_rate:
 
     eval_data = val_data if val_data is not None else test_data
     eval_metrics = compute_metrics(model, eval_data)
-    with open(os.path.join(paths['results_dir'], 'eval_results.json'), 'w') as f:
+    with open(os.path.join(paths['results_dir'], 'results_stochastic_pass.json'), 'w') as f:
         json.dump(eval_metrics, f)
     logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'], zero_division=0)}")
 
     if mc_dropout_inference:
         logger.info("Computing MC dropout metrics.")
         mc_dropout_metrics = compute_mc_dropout_metrics(model, eval_data)
-        with open(os.path.join(paths['results_dir'], 'mc_dropout_results.json'), 'w') as f:
+        with open(os.path.join(paths['results_dir'], 'results.json'), 'w') as f:
             json.dump(mc_dropout_metrics, f)
         logger.info(
             f"\n==== Classification report  (MC dropout) ====\n {classification_report(mc_dropout_metrics['y_true'], mc_dropout_metrics['y_pred'], zero_division=0)}")
