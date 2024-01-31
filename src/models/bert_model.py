@@ -114,10 +114,42 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
 
         return {m.name: m.result() for m in self.metrics}
 
-    def mc_dropout_predict(self, inputs, n=50) -> dict:
+    def monte_carlo_sample(self, inputs, n=50) -> dict:
+        """
+        Performs Monte Carlo sampling over the logit space.
+        """
+        y_pred = self(inputs, training=False)
+        logits = y_pred.logits
+        log_variance = y_pred.log_variances
+        variance = tf.exp(log_variance)
+        std = tf.sqrt(variance)
+
+        # sample n times from normal(0, std)
+        std_expanded = tf.expand_dims(std, -1)
+        std_samples = tf.random.normal(shape=(tf.shape(logits)[0], n, 1), stddev=std_expanded)  # (batch_size, n, 1)
+        # Adjust logits to have shape (batch_size, 1, 1) and then tile to match std_samples shape
+        logits_expanded = tf.expand_dims(logits, 1)  # (batch_size, 1, 1)
+        logits_tiled = tf.tile(logits_expanded, tf.constant([1, n, 1]))  # (batch_size, n, 1)
+
+        # Add the tiled logits and the standard deviation samples
+        logits_distorted = logits_tiled + std_samples  # (batch_size, n, 1)
+        probs_distorted = tf.nn.sigmoid(logits_distorted)  # (batch_size, n, 1)
+
+        mean_logits = tf.reduce_mean(logits_distorted, axis=1)  # (batch_size, 1)
+        mean_probs = tf.nn.sigmoid(mean_logits)
+
+        return {'logit_samples': logits_distorted,
+                'prob_samples': probs_distorted,
+                'mean_logits': mean_logits,
+                'mean_probs': mean_probs,
+                'logits': logits,
+                'log_variances': log_variance,
+                }
+
+    def mc_dropout_sample(self, inputs, n=50) -> dict:
         """
         Performs MC dropout sampling over the logit space.
-        Implemented via "caching" the body output and sampling repeatedly from the output heads.
+        TODO: rewrite for teacher (not used for student)
         """
         bert_outputs = self.bert(inputs, training=False)
         pooled_output = bert_outputs.pooler_output

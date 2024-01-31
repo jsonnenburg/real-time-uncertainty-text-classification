@@ -10,7 +10,6 @@ import time
 import logging
 
 from sklearn.metrics import classification_report
-from keras.callbacks import TensorBoard
 
 from src.distribution_distillation.uncertainty_distillation import get_predictive_distributions
 from src.utils.logger_config import setup_logging
@@ -21,7 +20,7 @@ from src.training.train_bert_teacher import serialize_metric
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
 from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, nll_score, brier_score,
-                               pred_entropy_score, ece_score)
+                               ece_score, bald_score)
 from src.utils.training import HistorySaver
 
 import tensorflow as tf
@@ -29,124 +28,80 @@ import tensorflow as tf
 logger = logging.getLogger()
 
 
-def compute_student_metrics(model, eval_data):
+def get_predictions(model, eval_data):
     total_logits = []
     total_log_variances = []
     total_labels = []
+
+    # mc sampling
+    total_prob_samples = []
 
     # iterate over all batches in eval_data
     start_time = time.time()
     for batch in eval_data:
         features, labels = batch
-        outputs = model(features, training=False)
-        total_logits.extend(outputs.logits)
-        total_log_variances.extend(outputs.log_variances)
+        outputs = model.monte_carlo_sample(features, n=50)
+        total_logits.extend(outputs['logits'])
+        total_log_variances.extend(outputs['log_variances'])
         total_labels.extend(labels.numpy())
+        total_prob_samples.extend(outputs['prob_samples'])
     total_time = time.time() - start_time
     average_inference_time = total_time / len(total_labels) * 1000
     logger.info(f"Average inference time per sample: {average_inference_time:.0f} milliseconds.")
 
     all_labels = np.array(total_labels)
 
-    if total_logits is not None and total_labels is not None:
-        prob_predictions_np = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
-        class_predictions_np = prob_predictions_np.round(0).astype(int)
-        variances_np = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
-        labels_np = all_labels
+    prob_predictions_np = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
+    class_predictions_np = prob_predictions_np.round(0).astype(int)
+    variances_np = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
+    labels_np = all_labels
 
-        acc = accuracy_score(labels_np, class_predictions_np)
-        prec = precision_score(labels_np, class_predictions_np)
-        rec = recall_score(labels_np, class_predictions_np)
-        f1 = f1_score(labels_np, class_predictions_np)
-        nll = nll_score(labels_np, prob_predictions_np)
-        bs = brier_score(labels_np, prob_predictions_np)
-        ece = ece_score(labels_np, class_predictions_np, prob_predictions_np)
-        return {
-            "y_true": labels_np.tolist(),
-            "y_pred": class_predictions_np.tolist(),
-            "y_prob": prob_predictions_np.tolist(),
-            "predictive_variance": variances_np.tolist(),
-            "average_inference_time": serialize_metric(average_inference_time),
-            "accuracy_score": serialize_metric(acc),
-            "precision_score": serialize_metric(prec),
-            "recall_score": serialize_metric(rec),
-            "f1_score": serialize_metric(f1),
-            "nll_score": serialize_metric(nll),
-            "brier_score": serialize_metric(bs),
-            "ece_score": serialize_metric(ece)
-        }
-    else:
-        logger.error("Metrics could not be computed successfully.")
+    total_prob_samples_np = np.array(total_prob_samples)
+
+    results = {'y_true': labels_np,
+               'y_pred': class_predictions_np,
+               'y_prob': prob_predictions_np,
+               'predictive_variance': variances_np,
+               'y_prob_mc': total_prob_samples_np,
+               'average_inference_time': average_inference_time
+               }
+
+    return results
 
 
-def compute_student_mc_dropout_metrics(model, eval_data, n):
-    total_logits = []
-    total_mean_logits = []
-    total_mean_variances = []
-    total_var_logits = []
-    total_labels = []
+def compute_student_metrics(model, eval_data):
+    predictions = get_predictions(model, eval_data)
 
-    total_uncertainties = []
+    y_true = predictions['y_true']
+    y_pred = predictions['y_pred']
+    y_prob = predictions['y_prob']
+    predictive_variance = predictions['predictive_variance']
+    y_prob_mc = predictions['y_prob_mc']
+    average_inference_time = predictions['average_inference_time']
 
-    start_time = time.time()
-    for batch in eval_data:
-        features, labels = batch
-        outputs = model.mc_dropout_predict(features, n=n)
-        logits = outputs['logits']
-        mean_logits = outputs['mean_logits']
-        mean_variances = outputs['mean_variances']
-        var_logits = outputs['var_logits']
-        total_uncertainty = outputs['total_uncertainty']
-        total_logits.append(logits.numpy())
-        total_mean_logits.extend(mean_logits.numpy())
-        total_mean_variances.extend(mean_variances.numpy())
-        total_var_logits.extend(var_logits.numpy())
-        total_uncertainties.extend(total_uncertainty.numpy())
-        total_labels.extend(labels.numpy())
-    total_time = time.time() - start_time
-    average_inference_time = total_time / len(total_labels) * 1000
-    logger.info(f"Average inference time per sample: {average_inference_time:.0f} milliseconds.")
-
-    total_logits = np.concatenate(total_logits, axis=1)  # concatenate along the batch dimension
-
-    if total_mean_logits and total_labels:
-        all_labels = np.array(total_labels)
-        mean_prob_predictions_np = tf.nn.sigmoid(total_mean_logits).numpy().reshape(all_labels.shape)
-        mean_class_predictions_np = mean_prob_predictions_np.round(0).astype(int)
-        mean_variances_np = np.array(total_mean_variances).reshape(all_labels.shape)
-        total_uncertainties_np = np.array(total_uncertainties).reshape(all_labels.shape)
-        labels_np = all_labels
-
-        sigmoid_logits = tf.nn.sigmoid(total_logits)
-        reshaped_logits = tf.reshape(sigmoid_logits, [-1, sigmoid_logits.shape[-1]])
-        batch_entropy_scores = pred_entropy_score(reshaped_logits)
-        avg_entropy = np.mean(batch_entropy_scores)
-
-        acc = accuracy_score(labels_np, mean_class_predictions_np)
-        prec = precision_score(labels_np, mean_class_predictions_np)
-        rec = recall_score(labels_np, mean_class_predictions_np)
-        f1 = f1_score(labels_np, mean_class_predictions_np)
-        nll = nll_score(labels_np, mean_prob_predictions_np)
-        bs = brier_score(labels_np, mean_prob_predictions_np)
-        avg_entropy = avg_entropy
-        ece = ece_score(labels_np, mean_class_predictions_np, mean_prob_predictions_np)
-        metrics = {
-            "y_true": labels_np.astype(int).tolist(),
-            "y_pred": mean_class_predictions_np.tolist(),
-            "y_prob": mean_prob_predictions_np.tolist(),
-            "predictive_variance": mean_variances_np.tolist(),
-            "total_uncertainty": total_uncertainties_np.tolist(),
-            "average_inference_time": serialize_metric(average_inference_time),
-            "accuracy_score": serialize_metric(acc),
-            "precision_score": serialize_metric(prec),
-            "recall_score": serialize_metric(rec),
-            "f1_score": serialize_metric(f1),
-            "nll_score": serialize_metric(nll),
-            "brier_score": serialize_metric(bs),
-            "avg_pred_entropy_score": serialize_metric(avg_entropy),
-            "ece_score": serialize_metric(ece),
-        }
-        return metrics
+    acc = accuracy_score(y_true, y_pred)
+    prec = precision_score(y_true, y_pred)
+    rec = recall_score(y_true, y_pred)
+    f1 = f1_score(y_true, y_pred)
+    nll = nll_score(y_true, y_prob)
+    bs = brier_score(y_true, y_prob)
+    ece = ece_score(y_true, y_pred, y_prob)
+    bald = bald_score(y_prob_mc)
+    return {
+        "y_true": y_true.tolist(),
+        "y_pred": y_pred.tolist(),
+        "y_prob": y_prob.tolist(),
+        "predictive_variance": predictive_variance.tolist(),
+        "average_inference_time": serialize_metric(average_inference_time),
+        "accuracy_score": serialize_metric(acc),
+        "precision_score": serialize_metric(prec),
+        "recall_score": serialize_metric(rec),
+        "f1_score": serialize_metric(f1),
+        "nll_score": serialize_metric(nll),
+        "brier_score": serialize_metric(bs),
+        "ece_score": serialize_metric(ece),
+        "bald_score": bald.tolist()
+    }
 
 
 def main(args):
@@ -236,9 +191,11 @@ def main(args):
 
     log_dir = os.path.join(args.output_dir, 'logs')
 
-    tensorboard_callback = TensorBoard(log_dir, histogram_freq=1)
-
     history_callback = HistorySaver(file_path=os.path.join(log_dir, 'student_uncertainty_distillation_log.txt'))
+
+    teacher_checkpoint_path = os.path.join(args.teacher_model_save_dir, 'cp-{epoch:02d}.ckpt')
+    teacher_checkpoint_dir = os.path.dirname(teacher_checkpoint_path)
+    latest_teacher_checkpoint = tf.train.latest_checkpoint(teacher_checkpoint_dir)
 
     # if we have a checkpoint for max epoch , load it and skip training
     latest_checkpoint = tf.train.latest_checkpoint(model_dir)
@@ -246,6 +203,9 @@ def main(args):
         student_model.load_weights(latest_checkpoint).expect_partial()
         logger.info(f"Found student model files, loaded weights from {latest_checkpoint}")
         logger.info('Skipping training.')
+    elif latest_teacher_checkpoint:
+        student_model.load_weights(latest_teacher_checkpoint).expect_partial()
+        logger.info(f"Found teacher model files, loaded weights from {latest_teacher_checkpoint}")
     else:
         logger.info('Starting fine-tuning...')
         student_model.fit(
@@ -253,30 +213,21 @@ def main(args):
             validation_data=val_data if val_data is not None else test_data,
             epochs=args.epochs,
             batch_size=args.batch_size,
-            callbacks=[cp_callback, tensorboard_callback, history_callback]
+            callbacks=[cp_callback, history_callback]
         )
         logger.info('Finished fine-tuning.')
 
     result_dir = os.path.join(args.output_dir, 'results')
     os.makedirs(result_dir, exist_ok=True)
 
-    # weight averaging predictions on eval set
-    eval_metrics = compute_student_metrics(student_model, test_data)
-    with open(os.path.join(result_dir, 'eval_results.json'), 'w') as f:
-        json.dump(eval_metrics, f)
-    logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'], zero_division=0)}")
-
-    # obtain "cached" MC dropout predictions on eval set
-    logger.info('Computing MC dropout metrics...')
-    metrics = compute_student_mc_dropout_metrics(student_model, test_data, args.n)
-    with open(os.path.join(result_dir, 'student_mc_dropout_metrics.json'), 'w') as f:
-        json.dump(metrics, f)
+    results = compute_student_metrics(student_model, test_data)
+    with open(os.path.join(result_dir, 'results.json'), 'w') as f:
+        json.dump(results, f)
     logger.info(
-        f"\n==== Classification report  (MC dropout) ====\n {classification_report(metrics['y_true'], metrics['y_pred'], zero_division=0)}")
-    f1 = metrics['f1_score']
-    logger.info(f"Final f1 score of distilled student model: {f1:.3f}")
+        f"\n==== Classification report ====\n {classification_report(results['y_true'], results['y_pred'], zero_division=0)}")
 
-    logger.info("MC dropout metrics successfully computed and saved.")
+    f1 = results['f1_score']
+    logger.info(f"Final f1 score of distilled student model: {f1:.3f}")
 
     if args.save_predictive_distributions:
         logger.info('Computing and saving predictive distributions...')

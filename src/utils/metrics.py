@@ -1,6 +1,5 @@
 import numpy as np
 from sklearn.metrics import brier_score_loss, log_loss
-from scipy.stats import entropy
 
 # y_pred: need class predictions
 # y_prob: need probabilities for positive class
@@ -72,14 +71,13 @@ def ece_score(y_true, y_pred, y_prob, n_bins=10):
     return ece
 
 
-def bald_score(y_prob_per_pass, y_prob_mc_mean):
+def bald_score(y_prob_mc):
     """
     Computes the BALD score as defined by Houlsby et al. (2011) for evaluating the predictive uncertainty of a model.
     Defined as the difference between the entropy of the predictive distribution and the expected entropy of the
     predictive distribution. The expected entropy is approximated by the entropy of the mean predictive distribution.
 
-    :param y_prob: The probability predictions (weight-averaging).
-    :param y_prob_mc_mean: The mean probability predictions over Monte Carlo or Dropout samples.
+    :param y_prob_mc: The probability predictions over Monte Carlo or Dropout samples.
 
     Predictive Entropy: This is the entropy of the predictive distribution, which quantifies the uncertainty in the
     model's predictions. It's typically calculated as the entropy of the averaged predictions over multiple stochastic
@@ -91,12 +89,14 @@ def bald_score(y_prob_per_pass, y_prob_mc_mean):
     def compute_entropy(probs):
         return -np.sum(probs * np.log(probs + 1e-10), axis=-1)
 
+    y_prob_mc_mean = np.mean(y_prob_mc, axis=1)
+
     # Predictive Entropy - Entropy of the mean predictive distribution
     predictive_entropy = compute_entropy(y_prob_mc_mean)
 
     # Expected Data Entropy - Mean of entropies of predictions for each stochastic forward pass
-    entropies_per_pass = compute_entropy(y_prob_per_pass)
-    expected_data_entropy = np.mean(entropies_per_pass, axis=0)
+    entropies_per_pass = compute_entropy(y_prob_mc)
+    expected_data_entropy = np.mean(entropies_per_pass, axis=1)
 
     # BALD score - Difference between Predictive Entropy and Expected Data Entropy
     bald = predictive_entropy - expected_data_entropy
