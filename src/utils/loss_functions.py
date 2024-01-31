@@ -9,7 +9,7 @@ def null_loss(y_true, y_pred) -> tf.Tensor:
 
 
 # The following was adapted from https://github.com/kyle-dorman/bayesian-neural-network-blogpost/tree/master.
-def bayesian_binary_crossentropy(T):
+def bayesian_binary_crossentropy(T=50):
     """
     The aleatoric loss function as defined by Kendall & Gal (2017) in Eq. 10 for fine-tuning the aleatoric uncertainty BERT teacher.
 
@@ -89,7 +89,8 @@ def shen_loss(loss_weight: int = 1, n_samples: int = 50):
 
         y_true, y_teacher = y_true[0], y_true[1]
 
-        Lt = bce_loss(y_true, y_pred)
+        bbc_loss = bayesian_binary_crossentropy(n_samples)
+        Lt = bbc_loss(y_true, y_pred)
         Ls = gaussian_mle_loss(y_teacher, y_pred, n_samples)
         Ltotal = Ls + weight * Lt
 
