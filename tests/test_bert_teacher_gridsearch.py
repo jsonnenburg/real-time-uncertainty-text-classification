@@ -12,7 +12,8 @@ import pandas as pd
 from src.utils.logger_config import setup_logging
 
 from src.models.bert_model import create_bert_config
-from src.training.train_bert_teacher import run_bert_grid_search, train_model, setup_config_directories
+from src.training.train_bert_teacher import run_bert_grid_search, train_model, setup_config_directories, prepare_data, \
+    infer_final_model_config
 from src.utils.data import SimpleDataLoader, Dataset
 
 logger = logging.getLogger()
@@ -31,17 +32,43 @@ def main(args):
     dataset.val = dataset.val.sample(n=min(subset_size, len(dataset.val)), random_state=args.seed)
     dataset.test = dataset.test.sample(n=min(subset_size, len(dataset.test)), random_state=args.seed)
 
+    train_data, val_data, test_data = prepare_data(dataset, max_length=args.max_length, batch_size=args.batch_size)
+
+    data = {
+        "train_data": train_data,
+        "val_data": val_data,
+        "test_data": test_data
+    }
+
     # Limit the grid search to fewer combinations
     hidden_dropout_probs = [0.7]
     attention_dropout_probs = [0.7]
     classifier_dropout_probs = [0.7]
 
-    best_f1, best_dropout_combination = run_bert_grid_search(dataset, hidden_dropout_probs, attention_dropout_probs,
-                                                             classifier_dropout_probs, args)
+    # "final" prefix among files in model dir
+    final_model_trained = any([f.startswith("final") for f in os.listdir(args.output_dir)])
+    if not final_model_trained:
+        best_f1, best_dropout_combination = run_bert_grid_search(data, hidden_dropout_probs, attention_dropout_probs,
+                                                                 classifier_dropout_probs, args)
+    else:
+        logger.info("Final model already trained, skipping grid search.")
+        # infer best dropout combination from final model directory
+        final_model_config = infer_final_model_config(args.output_dir)
+        best_dropout_combination = (
+        final_model_config['hidden_dropout_prob'], final_model_config['attention_probs_dropout_prob'],
+        final_model_config['classifier_dropout'])
 
     # Retrain the best model on a combination of train and validation set
     combined_training = pd.concat([dataset.train, dataset.val])
     combined_dataset = Dataset(train=combined_training, test=dataset.test)
+
+    train_data, val_data, test_data = prepare_data(combined_dataset, max_length=args.max_length, batch_size=args.batch_size)
+
+    combined_data = {
+        "train_data": train_data,
+        "val_data": val_data,
+        "test_data": test_data
+    }
 
     if args.save_datasets:
         logger.info("Saving datasets.")
@@ -63,7 +90,7 @@ def main(args):
         best_config = create_bert_config(best_dropout_combination[0], best_dropout_combination[1],
                                          best_dropout_combination[2])
         best_paths = setup_config_directories(args.output_dir, best_config, final_model=True)
-        eval_metrics = train_model(paths=best_paths, config=best_config, dataset=combined_dataset,
+        eval_metrics = train_model(paths=best_paths, config=best_config, data=combined_data,
                                    batch_size=args.batch_size, learning_rate=args.learning_rate, epochs=args.epochs,
                                    max_length=args.max_length, mc_dropout_inference=args.mc_dropout_inference,
                                    save_model=True)
