@@ -3,15 +3,19 @@ import os
 
 import numpy as np
 from tqdm import tqdm
+import logging
 
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
+from src.utils.logger_config import setup_logging
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss
 from src.utils.metrics import bald_score, f1_score, serialize_metric
 from src.utils.robustness_study import RobustnessStudyDataLoader
 
 import argparse
 import tensorflow as tf
+
+logger = logging.getLogger()
 
 
 def load_bert_model(model_path):
@@ -33,8 +37,7 @@ def load_bert_model(model_path):
     model.compile(
         optimizer=optimizer,
         loss={'classifier': bayesian_binary_crossentropy(50), 'log_variance': null_loss},
-        metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
-        run_eagerly=True
+        metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
     )
 
     latest_checkpoint = tf.train.latest_checkpoint(model_path)
@@ -44,7 +47,7 @@ def load_bert_model(model_path):
     return model
 
 
-def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 32):
+def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 128):
     input_ids, attention_masks, labels = bert_preprocess(data, max_length=max_length)
     data_tf = tf.data.Dataset.from_tensor_slices((
         {
@@ -147,16 +150,14 @@ def bert_student_monte_carlo(model, eval_data, n=50):
 
 def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
     results = {}
-
     for typ in preprocessed_data:
         for level in preprocessed_data[typ]:
-            data = preprocessed_data[typ][level][0]['data']
-            data_tf = preprocess_data_bert(data)
+            data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
 
             result_dict = {'y_true': [], 'y_pred': [], 'y_prob': [], 'predictive_variance': [], 'avg_bald': [], 'f1_score': []}
 
             for _ in tqdm(range(n_trials), desc=f'Performing inference for {typ} {level}'):
-                results = bert_teacher_mc_dropout(model, data_tf, n=1)
+                results = bert_teacher_mc_dropout(model, data_tf, n=30)
                 result_dict['y_true'].append(results['y_true'])
                 result_dict['y_pred'].append(results['y_pred'])
                 result_dict['y_prob'].append(results['y_prob'])
@@ -179,16 +180,14 @@ def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
 
 def perform_experiment_bert_student(model, preprocessed_data, n_trials):
     results = {}
-
     for typ in preprocessed_data:
         for level in preprocessed_data[typ]:
-            data = preprocessed_data[typ][level][0]['data']
-            data_tf = preprocess_data_bert(data)
+            data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
 
             result_dict = {'y_true': [], 'y_pred': [], 'y_prob': [], 'predictive_variance': [], 'avg_bald': [], 'f1_score': []}
 
             for _ in tqdm(range(n_trials), desc=f'Performing inference for {typ} {level}'):
-                results = bert_student_monte_carlo(model, data_tf, n=1)
+                results = bert_student_monte_carlo(model, data_tf, n=30)
                 result_dict['y_true'].append(results['y_true'])
                 result_dict['y_pred'].append(results['y_pred'])
                 result_dict['y_prob'].append(results['y_prob'])
@@ -235,13 +234,20 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--teacher_model_path', type=str, required=True)
-    parser.add_argument('--student_model_path', type=str, required=True)
-    parser.add_argument('--bilstm_model_path', type=str, required=False)
-    parser.add_argument('--cnn_model_path', type=str, required=False)
-    parser.add_argument('--data_dir', type=str, required=True)
-    parser.add_argument('--output_dir', type=str, required=True)
+    parser.add_argument('--teacher_model_path', type=str)
+    parser.add_argument('--student_model_path', type=str)
+    parser.add_argument('--bilstm_model_path', type=str)
+    parser.add_argument('--cnn_model_path', type=str)
+    parser.add_argument('--data_dir', type=str)
+    parser.add_argument('--output_dir', type=str)
     args = parser.parse_args()
+
+    os.makedirs(args.output_dir, exist_ok=True)
+    log_dir = os.path.join(args.output_dir, 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_file_path = os.path.join(log_dir, 'robustness_study_log.txt')
+    setup_logging(logger, log_file_path)
+
     main(args)
 
 
