@@ -263,16 +263,13 @@ def train_model(paths: dict, data: dict, config, batch_size: int, learning_rate:
         json.dump(eval_metrics, f)
     logger.info(f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'], zero_division=0)}")
 
-    if mc_dropout_inference:
-        logger.info("Computing MC dropout metrics.")
-        mc_dropout_metrics = compute_mc_dropout_metrics(model, eval_data)
-        with open(os.path.join(paths['results_dir'], 'results.json'), 'w') as f:
-            json.dump(mc_dropout_metrics, f)
-        logger.info(
-            f"\n==== Classification report  (MC dropout) ====\n {classification_report(mc_dropout_metrics['y_true'], mc_dropout_metrics['y_pred'], zero_division=0)}")
-        return mc_dropout_metrics
-
-    return eval_metrics
+    logger.info("Computing MC dropout metrics.")
+    mc_dropout_metrics = compute_mc_dropout_metrics(model, eval_data)
+    with open(os.path.join(paths['results_dir'], 'results.json'), 'w') as f:
+        json.dump(mc_dropout_metrics, f)
+    logger.info(
+        f"\n==== Classification report  (MC dropout) ====\n {classification_report(mc_dropout_metrics['y_true'], mc_dropout_metrics['y_pred'], zero_division=0)}")
+    return mc_dropout_metrics
 
 
 def run_bert_grid_search(data: dict, hidden_dropout_probs: list, attention_dropout_probs: list, classifier_dropout_probs: list, args) -> Tuple[float, Tuple[float, float, float]]:
@@ -408,16 +405,16 @@ def main(args):
         best_config = create_bert_config(best_dropout_combination[0], best_dropout_combination[1], best_dropout_combination[2])
         best_paths = setup_config_directories(args.output_dir, best_config, final_model=True)
         logger.info("Training final model with best dropout combination.")
-        eval_metrics = train_model(paths=best_paths, config=best_config, data=combined_data,
+        results = train_model(paths=best_paths, config=best_config, data=combined_data,
                                    batch_size=args.batch_size, learning_rate=args.learning_rate, epochs=args.epochs,
                                    max_length=args.max_length, mc_dropout_inference=args.mc_dropout_inference,
                                    save_model=True)
-        if eval_metrics is not None:
+        if results is not None:
             trained_best_model = True
-        f1 = eval_metrics['f1_score']
+        f1 = results['f1_score']
         logger.info(f"Final f1 score of best model configuration: {f1:.3f}")
     if args.cleanup and trained_best_model:
-        for directory in os.listdir("."):
+        for directory in os.listdir(args.output_dir):
             if os.path.isdir(directory) and directory.startswith("temp"):
                 shutil.rmtree(directory)
     logger.info("Finished grid search.")
@@ -430,7 +427,6 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--max_length", type=int, default=48)
-    parser.add_argument('-mcd', '--mc_dropout_inference', action='store_true', help='Enable MC dropout inference.')
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--save_datasets', action='store_true')

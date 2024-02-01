@@ -20,6 +20,5 @@ pip install -r slurm_requirements.txt
 
 export TF_GPU_ALLOCATOR=cuda_malloc_async
 
-python3.8 src/training/train_bert_teacher.py --input_data_dir data/robustness_study/preprocessed --output_dir out/bert_teacher_gridsearch  \
---learning_rate 0.00002 --batch_size 32 --epochs 3 --max_length 48 --mc_dropout_inference --seed 42 \
---save_datasets --cleanup
+python3.8 src/training/train_bert_teacher.py --input_data_dir data/robustness_study/preprocessed --output_dir out/bert_teacher \
+--learning_rate 0.00002 --batch_size 32 --epochs 3 --max_length 48 --seed 42 --save_datasets --cleanup
