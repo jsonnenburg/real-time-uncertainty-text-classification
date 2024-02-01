@@ -202,13 +202,11 @@ def main(args):
     k = args.k
 
     if args.epistemic_only:
-        output_dir = os.path.join(args.output_dir, 'epistemic_only')
-        transfer_data_dir = os.path.join(output_dir, f'm{m}')
+        transfer_data_dir = os.path.join(args.output_dir, f'm{m}')
         transfer_df_train = epistemic_mc_dropout_transfer_sampling(teacher, training_set_preprocessed, m=m)
         transfer_df_test = epistemic_mc_dropout_transfer_sampling(teacher, test_set_preprocessed, m=m)
     else:
-        output_dir = os.path.join(args.output_dir, 'aleatoric_and_epistemic')
-        transfer_data_dir = os.path.join(output_dir, f'm{m}_k{k}')
+        transfer_data_dir = os.path.join(args.output_dir, f'm{m}_k{k}')
         transfer_df_train = aleatoric_mc_dropout_transfer_sampling(teacher, training_set_preprocessed, m=m, k=k)
         transfer_df_test = aleatoric_mc_dropout_transfer_sampling(teacher, test_set_preprocessed, m=m, k=k)
 

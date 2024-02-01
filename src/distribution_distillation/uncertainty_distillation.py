@@ -156,10 +156,10 @@ def main(args):
 
     if args.epistemic_only:
         logger.info('Distilling epistemic uncertainty only.')
-        data_dir = os.path.join(args.transfer_data_dir, 'epistemic_only', f'm{args.m}')
+        data_dir = os.path.join(args.transfer_data_dir, f'm{args.m}')
     else:
         logger.info('Distilling both epistemic and aleatoric uncertainty.')
-        data_dir = os.path.join(args.transfer_data_dir, 'aleatoric_and_epistemic', f'm{args.m}_k{args.k}')
+        data_dir = os.path.join(args.transfer_data_dir, f'm{args.m}_k{args.k}')
 
     dataset = Dataset()
     dataset.train = pd.read_csv(os.path.join(data_dir, 'transfer_train.csv'), sep='\t')

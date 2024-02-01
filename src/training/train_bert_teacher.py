@@ -188,19 +188,18 @@ def prepare_data(dataset: Dataset, max_length: int = 48, batch_size: int = 32):
 
 
 def train_model(paths: dict, data: dict, config, batch_size: int, learning_rate: float, epochs: int, max_length: int,
-                mc_dropout_inference: bool = True, save_model: bool = False):
+                save_model: bool = False):
     """
     Trains a teacher BERT model and records the validation set performance, either for one stochastic forward pass or
     for M stochastic forward passes, with dropout enabled (MC dropout).
 
     :param paths: Dictionary with paths to the log, results, and model directories.
     :param config:
-    :param dataset:
+    :param data:
     :param batch_size:
     :param learning_rate:
     :param epochs:
     :param max_length:
-    :param mc_dropout_inference:
     :param save_model:
     :return: eval_metrics
     """
@@ -296,8 +295,7 @@ def run_bert_grid_search(data: dict, hidden_dropout_probs: list, attention_dropo
                     paths = setup_config_directories(args.output_dir, config, final_model=False)
                     eval_metrics = train_model(paths=paths, config=config, data=data, batch_size=args.batch_size,
                                                learning_rate=args.learning_rate, epochs=args.epochs,
-                                               max_length=args.max_length,
-                                               mc_dropout_inference=args.mc_dropout_inference, save_model=False)
+                                               max_length=args.max_length, save_model=False)
                     f1 = eval_metrics['f1_score']  # note that eval_results is either eval_results or mc_dropout_results
                     if f1 > best_f1:
                         best_f1 = f1
@@ -405,10 +403,9 @@ def main(args):
         best_config = create_bert_config(best_dropout_combination[0], best_dropout_combination[1], best_dropout_combination[2])
         best_paths = setup_config_directories(args.output_dir, best_config, final_model=True)
         logger.info("Training final model with best dropout combination.")
-        results = train_model(paths=best_paths, config=best_config, data=combined_data,
-                                   batch_size=args.batch_size, learning_rate=args.learning_rate, epochs=args.epochs,
-                                   max_length=args.max_length, mc_dropout_inference=args.mc_dropout_inference,
-                                   save_model=True)
+        results = train_model(paths=best_paths, config=best_config, data=combined_data, batch_size=args.batch_size,
+                              learning_rate=args.learning_rate, epochs=args.epochs, max_length=args.max_length,
+                              save_model=True)
         if results is not None:
             trained_best_model = True
         f1 = results['f1_score']

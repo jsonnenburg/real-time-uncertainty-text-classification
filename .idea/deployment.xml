@@ -9,6 +9,13 @@
           </mappings>
         </serverdata>
       </paths>
+      <paths name="gruenau10">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/real-time-uncertainty-text-classification" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
     </serverData>
   </component>
 </project>

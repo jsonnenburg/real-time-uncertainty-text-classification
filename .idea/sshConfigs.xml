@@ -3,6 +3,9 @@
   <component name="SshConfigs">
     <configs>
       <sshConfig authType="PASSWORD" host="gruenau1.informatik.hu-berlin.de" id="7a8d799c-bed3-47bb-bf00-6a64c5494740" port="22" nameFormat="DESCRIPTIVE" username="sonnenbj" useOpenSSHConfig="true" />
+      <sshConfig authType="PASSWORD" host="gruenau10.informatik.hu-berlin.de" id="caa8b68b-12f7-4565-9a10-6274330d9da3" port="22" customName="sonnenbj@gruenau10.informatik.hu-berlin.de:22" nameFormat="CUSTOM" username="sonnenbj" useOpenSSHConfig="true">
+        <option name="customName" value="sonnenbj@gruenau10.informatik.hu-berlin.de:22" />
+      </sshConfig>
     </configs>
   </component>
 </project>

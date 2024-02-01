@@ -9,6 +9,13 @@
           </advancedOptions>
         </fileTransfer>
       </webServer>
+      <webServer id="45e822f9-50ed-46c0-8e44-f3cdf0fbe7d0" name="gruenau10">
+        <fileTransfer rootFolder="/vol/fob-vol1/nebenf23/sonnenbj" accessType="SFTP" host="gruenau10.informatik.hu-berlin.de" port="22" sshConfigId="caa8b68b-12f7-4565-9a10-6274330d9da3" sshConfig="sonnenbj@gruenau10.informatik.hu-berlin.de:22">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
     </option>
   </component>
 </project>
