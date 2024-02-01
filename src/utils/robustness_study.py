@@ -41,9 +41,9 @@ def generate_noisy_test_data_filepath(noise_params: NoiseParams) -> str:
     return f'test_psr{int(psr_level * 100):03d}_ppr{int(ppr_level * 100):03d}_pri{int(pri_level * 100):03d}_prs{int(prs_level * 100):03d}_prd{int(prd_level * 100):03d}.csv'
 
 
-class RobustnessStudyTestSetLoader:
+class RobustnessStudyDataLoader:
     """
-    Loads the perturbed test set from the given directory.
+    Holds the perturbed test set from the given directory.
     """
     def __init__(self, data_dir: str):
         self.data_dir: str = data_dir
@@ -60,22 +60,22 @@ class RobustnessStudyTestSetLoader:
 
         for file in os.listdir(self.data_dir):
             if file.endswith(".csv"):
-                # Extract noise levels from filename
+                # extract noise levels from filename
                 noise_levels = re.findall(r'_(psr|ppr|pri|prs|prd)(\d{3})', file)
                 for typ, level in noise_levels:
                     level = int(level) / 100  # Convert level to a more readable format
 
-                    # Read the CSV file
+                    # read the CSV file
                     df = pd.read_csv(os.path.join(self.data_dir, file), sep='\t')
 
-                    # Check if the noise type is already in the dictionary
+                    # check if the noise type is already in the dictionary
                     if typ not in datasets:
                         datasets[typ] = {}
-                    # Check if the noise level is already under this noise type
+                    # check if the noise level is already under this noise type
                     if level not in datasets[typ]:
                         datasets[typ][level] = []
 
-                    # Append the dataframe and file name to the list under the specific noise type and level
+                    # append the dataframe and file name to the list under the specific noise type and level
                     datasets[typ][level].append({'file': file, 'data': df})
 
         return datasets
