@@ -230,32 +230,6 @@ def main(args):
     f1 = results['f1_score']
     logger.info(f"Final f1 score of distilled student model: {f1:.3f}")
 
-    if args.save_predictive_distributions:
-        logger.info('Computing and saving predictive distributions...')
-        logger.info('Initializing teacher model...')
-        config = create_bert_config(teacher_config['hidden_dropout_prob'],
-                                    teacher_config['attention_probs_dropout_prob'],
-                                    teacher_config['classifier_dropout'])
-        teacher_model = AleatoricMCDropoutBERT(config, custom_loss_fn=shen_loss)
-        teacher_model.compile(
-            optimizer=optimizer,
-            loss={'classifier': shen_loss, 'log_variance': null_loss},
-            metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
-            run_eagerly=True
-        )
-        teacher_model.load_weights(latest_teacher_checkpoint).expect_partial()
-        logger.info(f"Found teacher model files, loaded weights from {latest_teacher_checkpoint}")
-        logger.info('Teacher model initialized.')
-        t_pred_dist_info, s_pred_dist_info = get_predictive_distributions(teacher_model,
-                                                                          student_model,
-                                                                          eval_data=test_data,
-                                                                          num_samples=args.predictive_distribution_samples)
-        with open(os.path.join(result_dir, 'teacher_predictive_distribution_info.json'), 'w') as f:
-            json.dump(t_pred_dist_info, f)
-        with open(os.path.join(result_dir, 'student_predictive_distribution_info.json'), 'w') as f:
-            json.dump(s_pred_dist_info, f)
-        logger.info('Predictive distributions successfully computed and saved.')
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -265,12 +239,10 @@ if __name__ == '__main__':
                         help="Transfer sampling param to know which dataset to use.")
     parser.add_argument('--k', type=int, default=10,
                         help="Transfer sampling param to know which dataset to use.")
-    parser.add_argument('--epistemic_only', action='store_true')  # if true, only model epistemic uncertainty, else also model aleatoric uncertainty
+    parser.add_argument('--epistemic_only', action='store_true',
+                        help="If true, only model epistemic uncertainty, else also model aleatoric uncertainty.")
     parser.add_argument('--version_identifier', type=str, default=None,
                         help="Version identifier for output dir.")
-    parser.add_argument('--save_predictive_distributions', action='store_true')
-    parser.add_argument('--predictive_distribution_samples', type=int, default=500,
-                        help="Number of samples to draw from predictive distribution.")
     parser.add_argument('--learning_rate', type=float, default=2e-5)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--epochs', type=int, default=3)
@@ -282,9 +254,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.epistemic_only:
-        args.output_dir = os.path.join(args.output_dir, 'epistemic_only', f'm{args.m}')
+        args.output_dir = os.path.join(args.output_dir, f'm{args.m}')
     else:
-        args.output_dir = os.path.join(args.output_dir, 'aleatoric_and_epistemic', f'm{args.m}_k{args.k}')
+        args.output_dir = os.path.join(args.output_dir, f'm{args.m}_k{args.k}')
     if args.version_identifier is not None:
         # append version identifier to output dir (e.g., for experiments with different hyperparameters)
         args.output_dir = os.path.join(args.output_dir, args.version_identifier)
