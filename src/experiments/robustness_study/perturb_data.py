@@ -16,7 +16,7 @@ args = ap.parse_args()
 input_dir = args.input_dir
 output_dir = args.output_dir
 
-p_values = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
+p_values = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
 
 
 def generate_noisy_test_data(input_file, output_dir, p_sr, p_pr, p_ri, p_rs, p_rd):

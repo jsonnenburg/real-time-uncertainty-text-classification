@@ -53,7 +53,7 @@ def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 32):
         },
         labels
     ))
-    data_tf.batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
+    data_tf = data_tf.batch(batch_size).cache().prefetch(tf.data.experimental.AUTOTUNE)
     return data_tf
 
 
@@ -76,7 +76,7 @@ def bert_teacher_mc_dropout(model, eval_data, n=50) -> dict:
         total_probs.append(probs.numpy())
         total_mean_logits.extend(mean_logits.numpy())
         total_mean_log_variances.extend(mean_log_variances.numpy())
-        total_labels.extend(labels.numpy())
+        total_labels.append(labels.numpy())
 
     y_prob_samples = np.concatenate(total_probs, axis=0)
 
@@ -94,12 +94,12 @@ def bert_teacher_mc_dropout(model, eval_data, n=50) -> dict:
     f1 = f1_score(y_true, y_pred_mcd)
 
     return {
-        "y_true": y_true,
-        "y_pred": y_pred_mcd,
-        "y_prob": y_prob_mcd,
-        "predictive_variance": var_mcd,
+        'y_true': y_true,
+        'y_pred': y_pred_mcd,
+        'y_prob': y_prob_mcd,
+        'predictive_variance': var_mcd,
         'avg_bald': avg_bald,
-        "f1_score": f1,
+        'f1_score': f1,
     }
 
 
@@ -150,13 +150,13 @@ def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
 
     for typ in preprocessed_data:
         for level in preprocessed_data[typ]:
-            data = preprocessed_data[typ][level]
+            data = preprocessed_data[typ][level][0]['data']
             data_tf = preprocess_data_bert(data)
 
-            result_dict = {'y_pred': [], 'y_prob': []}
+            result_dict = {'y_true': [], 'y_pred': [], 'y_prob': [], 'predictive_variance': [], 'avg_bald': [], 'f1_score': []}
 
             for _ in tqdm(range(n_trials), desc=f'Performing inference for {typ} {level}'):
-                results = bert_teacher_mc_dropout(model, data_tf, n=50)
+                results = bert_teacher_mc_dropout(model, data_tf, n=1)
                 result_dict['y_true'].append(results['y_true'])
                 result_dict['y_pred'].append(results['y_pred'])
                 result_dict['y_prob'].append(results['y_prob'])
@@ -182,13 +182,13 @@ def perform_experiment_bert_student(model, preprocessed_data, n_trials):
 
     for typ in preprocessed_data:
         for level in preprocessed_data[typ]:
-            data = preprocessed_data[typ][level]
+            data = preprocessed_data[typ][level][0]['data']
             data_tf = preprocess_data_bert(data)
 
-            result_dict = {'y_pred': [], 'y_prob': []}
+            result_dict = {'y_true': [], 'y_pred': [], 'y_prob': [], 'predictive_variance': [], 'avg_bald': [], 'f1_score': []}
 
             for _ in tqdm(range(n_trials), desc=f'Performing inference for {typ} {level}'):
-                results = bert_student_monte_carlo(model, data_tf)
+                results = bert_student_monte_carlo(model, data_tf, n=1)
                 result_dict['y_true'].append(results['y_true'])
                 result_dict['y_pred'].append(results['y_pred'])
                 result_dict['y_prob'].append(results['y_prob'])
@@ -237,8 +237,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--teacher_model_path', type=str, required=True)
     parser.add_argument('--student_model_path', type=str, required=True)
-    parser.add_argument('--bilstm_model_path', type=str, required=True)
-    parser.add_argument('--cnn_model_path', type=str, required=True)
+    parser.add_argument('--bilstm_model_path', type=str, required=False)
+    parser.add_argument('--cnn_model_path', type=str, required=False)
     parser.add_argument('--data_dir', type=str, required=True)
     parser.add_argument('--output_dir', type=str, required=True)
     args = parser.parse_args()

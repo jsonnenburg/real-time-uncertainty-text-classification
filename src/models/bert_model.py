@@ -4,8 +4,6 @@ from transformers import BertConfig, TFBertModel
 import tensorflow as tf
 from transformers.modeling_tf_outputs import TFSequenceClassifierOutput
 
-from src.utils.inference import compute_total_uncertainty
-
 
 def create_bert_config(hidden_dropout_prob, attention_probs_dropout_prob, classifier_dropout):
     config = BertConfig()
@@ -46,7 +44,6 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
         self.log_variance_predictor = tf.keras.layers.Dense(
             units=1,
             kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=config.initializer_range),
-            # activation='linear',
             name="log_variance",
             trainable=True
         )

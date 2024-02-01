@@ -65,17 +65,18 @@ class RobustnessStudyDataLoader:
                 for typ, level in noise_levels:
                     level = int(level) / 100  # Convert level to a more readable format
 
-                    # read the CSV file
-                    df = pd.read_csv(os.path.join(self.data_dir, file), sep='\t')
+                    if level > 0:
+                        # read the CSV file
+                        df = pd.read_csv(os.path.join(self.data_dir, file), sep='\t')
 
-                    # check if the noise type is already in the dictionary
-                    if typ not in datasets:
-                        datasets[typ] = {}
-                    # check if the noise level is already under this noise type
-                    if level not in datasets[typ]:
-                        datasets[typ][level] = []
+                        # check if the noise type is already in the dictionary
+                        if typ not in datasets:
+                            datasets[typ] = {}
+                        # check if the noise level is already under this noise type
+                        if level not in datasets[typ]:
+                            datasets[typ][level] = []
 
-                    # append the dataframe and file name to the list under the specific noise type and level
-                    datasets[typ][level].append({'file': file, 'data': df})
+                        # append the dataframe and file name to the list under the specific noise type and level
+                        datasets[typ][level].append({'file': file, 'data': df})
 
         return datasets
