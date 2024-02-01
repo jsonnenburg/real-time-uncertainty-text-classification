@@ -7,7 +7,7 @@ from tqdm import tqdm
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss
-from src.utils.metrics import bald_score
+from src.utils.metrics import bald_score, f1_score, serialize_metric
 from src.utils.robustness_study import RobustnessStudyDataLoader
 
 import argparse
@@ -57,7 +57,7 @@ def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 32):
     return data_tf
 
 
-def bert_teacher_mc_dropout(model, eval_data, n=30) -> dict:
+def bert_teacher_mc_dropout(model, eval_data, n=50) -> dict:
     total_logits = []
     total_probs = []
     total_mean_logits = []
@@ -84,28 +84,70 @@ def bert_teacher_mc_dropout(model, eval_data, n=30) -> dict:
 
     y_prob_mcd = tf.nn.sigmoid(total_mean_logits).numpy().reshape(all_labels.shape)
     y_pred_mcd = y_prob_mcd.round(0).astype(int)
+    y_true = all_labels
 
     var_mcd = tf.exp(total_mean_log_variances).numpy().reshape(all_labels.shape)
 
     bald = bald_score(y_prob_samples)
+    avg_bald = np.mean(bald)
+
+    f1 = f1_score(y_true, y_pred_mcd)
+
     return {
-        "y_pred": y_pred_mcd.tolist(),
-        "y_prob": y_prob_mcd.tolist(),
-        "predictive_variance": var_mcd.tolist(),
-        "bald_score": bald.tolist()
+        "y_true": y_true,
+        "y_pred": y_pred_mcd,
+        "y_prob": y_prob_mcd,
+        "predictive_variance": var_mcd,
+        'avg_bald': avg_bald,
+        "f1_score": f1,
     }
 
 
+def bert_student_monte_carlo(model, eval_data, n=50):
+    total_logits = []
+    total_log_variances = []
+    total_labels = []
+
+    # mc samples
+    total_prob_samples = []
+
+    # iterate over all batches in eval_data
+    for batch in eval_data:
+        features, labels = batch
+        outputs = model.monte_carlo_sample(features, n=n)
+        total_logits.extend(outputs['logits'])
+        total_log_variances.extend(outputs['log_variances'])
+        total_labels.extend(labels.numpy())
+        total_prob_samples.extend(outputs['prob_samples'])
+
+    all_labels = np.array(total_labels)
+
+    y_prob_mc = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
+    y_pred_mc = y_prob_mc.round(0).astype(int)
+    variances_np = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
+    y_true = all_labels
+
+    total_prob_samples_np = np.array(total_prob_samples)
+    bald = bald_score(total_prob_samples_np)
+    avg_bald = np.mean(bald)
+
+    f1 = f1_score(y_true, y_pred_mc)
+
+    results = {
+        'y_true': y_true,
+        'y_pred': y_pred_mc,
+        'y_prob': y_prob_mc,
+        'predictive_variance': variances_np,
+        'avg_bald': avg_bald,
+        'f1_score': f1,
+       }
+
+    return results
+
+
 def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
-    # preprocess data for model
-    # each model might require a custom method for preprocessing and inference
-    # this could then be called in a loop over each perturbed test set
-
-    # create dict in shape of preprocessed data dict
-
     results = {}
 
-    # for each key in preprocessed data dict, iterate over subdicts and preprocess data
     for typ in preprocessed_data:
         for level in preprocessed_data[typ]:
             data = preprocessed_data[typ][level]
@@ -114,55 +156,81 @@ def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
             result_dict = {'y_pred': [], 'y_prob': []}
 
             for _ in tqdm(range(n_trials), desc=f'Performing inference for {typ} {level}'):
-                results = bert_teacher_mc_dropout(model, data_tf, n=30)
+                results = bert_teacher_mc_dropout(model, data_tf, n=50)
+                result_dict['y_true'].append(results['y_true'])
                 result_dict['y_pred'].append(results['y_pred'])
                 result_dict['y_prob'].append(results['y_prob'])
                 result_dict['predictive_variance'].append(results['predictive_variance'])
-                result_dict['bald_score'].append(results['bald_score'])
+                result_dict['avg_bald'].append(results['avg_bald'])
+                result_dict['f1_score'].append(results['f1_score'])
 
-            mean_y_pred = np.mean(result_dict['y_prob'], axis=0)
-            std_y_pred = np.std(result_dict['y_prob'], axis=0)
+            f1_mean = np.mean(result_dict['f1_score'], axis=0)
+            f1_std = np.std(result_dict['f1_score'], axis=0)
+            avg_bald = np.mean(result_dict['avg_bald'], axis=0)
 
             results[typ][level] = {
-                'y_pred': mean_y_pred.tolist(),
-                'y_prob': std_y_pred.tolist(),
+                'f1_mean': serialize_metric(f1_mean),
+                'f1_std': serialize_metric(f1_std),
+                'avg_bald': serialize_metric(avg_bald),
             }
 
     return results
 
 
 def perform_experiment_bert_student(model, preprocessed_data, n_trials):
-    # loop over preprocessed data and perform inference for each n_type, n_level combination
-    # -> monce carlo sampling
-    # repeat n_trials times for each combination
-    # compute mean and std of inference results for n_trials ->
+    results = {}
 
-    # what about BALD?
-    pass
+    for typ in preprocessed_data:
+        for level in preprocessed_data[typ]:
+            data = preprocessed_data[typ][level]
+            data_tf = preprocess_data_bert(data)
+
+            result_dict = {'y_pred': [], 'y_prob': []}
+
+            for _ in tqdm(range(n_trials), desc=f'Performing inference for {typ} {level}'):
+                results = bert_student_monte_carlo(model, data_tf)
+                result_dict['y_true'].append(results['y_true'])
+                result_dict['y_pred'].append(results['y_pred'])
+                result_dict['y_prob'].append(results['y_prob'])
+                result_dict['predictive_variance'].append(results['predictive_variance'])
+                result_dict['avg_bald'].append(results['avg_bald'])
+                result_dict['f1_score'].append(results['f1_score'])
+
+            f1_mean = np.mean(result_dict['f1_score'], axis=0)
+            f1_std = np.std(result_dict['f1_score'], axis=0)
+            avg_bald = np.mean(result_dict['avg_bald'], axis=0)
+
+            results[typ][level] = {
+                'f1_mean': serialize_metric(f1_mean),
+                'f1_std': serialize_metric(f1_std),
+                'avg_bald': serialize_metric(avg_bald),
+            }
+
+    return results
 
 
 def main(args):
-    # load teacher
-
-    # load student
-
     # load data from data/robustness_study/noisy
     data_loader = RobustnessStudyDataLoader(args.data_dir)
     data_loader.load_data()
 
     test_data = data_loader.data
 
+    # load models
     bert_teacher = load_bert_model(args.teacher_model_path)
     bert_student = load_bert_model(args.student_model_path)
 
-    # perform inference on data with models
-    # - need uncertainty estimates -> MCD teacher model
-    # - repeat multiple (10) times to compute mean and std of inference results (statistical significance)
+    # perform experiments
     results_bert_teacher = perform_experiment_bert_teacher(bert_teacher, test_data, n_trials=20)
+    results_bert_student = perform_experiment_bert_student(bert_student, test_data, n_trials=20)
 
-    # save results (what format?)
+    # save results
+    os.makedirs(args.output_dir, exist_ok=True)
+    with open(os.path.join(args.output_dir, 'results_bert_teacher.json'), 'w') as f:
+        json.dump(results_bert_teacher, f)
 
-    pass
+    with open(os.path.join(args.output_dir, 'results_bert_student.json'), 'w') as f:
+        json.dump(results_bert_student, f)
 
 
 if __name__ == '__main__':
@@ -172,6 +240,7 @@ if __name__ == '__main__':
     parser.add_argument('--bilstm_model_path', type=str, required=True)
     parser.add_argument('--cnn_model_path', type=str, required=True)
     parser.add_argument('--data_dir', type=str, required=True)
+    parser.add_argument('--output_dir', type=str, required=True)
     args = parser.parse_args()
     main(args)
 
