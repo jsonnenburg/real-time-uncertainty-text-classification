@@ -1,4 +1,5 @@
 import os
+import re
 from dataclasses import dataclass
 
 import pandas as pd
@@ -40,29 +41,41 @@ def generate_noisy_test_data_filepath(noise_params: NoiseParams) -> str:
     return f'test_psr{int(psr_level * 100):03d}_ppr{int(ppr_level * 100):03d}_pri{int(pri_level * 100):03d}_prs{int(prs_level * 100):03d}_prd{int(prd_level * 100):03d}.csv'
 
 
-class RobustnessStudyTestSetLoader():
+class RobustnessStudyTestSetLoader:
     """
-    Takes as additional arguments the test set perturbation parameters.
+    Loads the perturbed test set from the given directory.
     """
-    def __init__(self, noisy_dataset_dir: str, noise_params: NoiseParams):
-        self.noisy_dataset_dir: str = noisy_dataset_dir
-        self.dataset: dict = dict(params=noise_params, data=None)
+    def __init__(self, data_dir: str):
+        self.data_dir: str = data_dir
+        self.data = None
 
-    def load_perturbed_test_dataset(self) -> None:
+    def load_data(self) -> None:
         """
         Loads the perturbed test set from the given directory.
         """
-        perturbed_test_file = os.path.join(self.noisy_dataset_dir, generate_noisy_test_data_filepath(self.dataset['params']))
-        self.dataset['data'] = pd.read_csv(perturbed_test_file, sep='\t', index_col=0)
+        self.data = self._load_data()
 
-    def get_dataset(self) -> dict:
-        """
-        Returns the perturbed test dataset.
+    def _load_data(self):
+        datasets = {}
 
-        :return: dict with perturbation parameters and perturbed test dataset, keys: 'params', 'data'
-        """
-        return self.dataset
+        for file in os.listdir(self.data_dir):
+            if file.endswith(".csv"):
+                # Extract noise levels from filename
+                noise_levels = re.findall(r'_(psr|ppr|pri|prs|prd)(\d{3})', file)
+                for typ, level in noise_levels:
+                    level = int(level) / 100  # Convert level to a more readable format
 
+                    # Read the CSV file
+                    df = pd.read_csv(os.path.join(self.data_dir, file), sep='\t')
 
-# usage:
-# import NoiseParams, set the noise parameters in each iteration
+                    # Check if the noise type is already in the dictionary
+                    if typ not in datasets:
+                        datasets[typ] = {}
+                    # Check if the noise level is already under this noise type
+                    if level not in datasets[typ]:
+                        datasets[typ][level] = []
+
+                    # Append the dataframe and file name to the list under the specific noise type and level
+                    datasets[typ][level].append({'file': file, 'data': df})
+
+        return datasets
