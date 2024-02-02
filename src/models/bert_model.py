@@ -145,20 +145,15 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
 
     def mc_dropout_sample(self, inputs, n=50) -> dict:
         """
-        Performs MC dropout sampling over the logit space.
+        Performs MC dropout sampling.
         """
-        bert_outputs = self.bert(inputs, training=False)
-        pooled_output = bert_outputs.pooler_output
-
         all_logits = []
         all_log_variances = []
         for i in range(n):
             tf.random.set_seed(range(n)[i])
-            dropout_output = self.dropout(pooled_output, training=True)
-            logits = self.classifier(dropout_output)
-            log_variance = self.log_variance_predictor(dropout_output)
-            all_logits.append(logits)
-            all_log_variances.append(log_variance)
+            outputs = self(inputs, training=True)
+            all_logits.append(outputs.logits)
+            all_log_variances.append(outputs.log_variances)
         all_logits = tf.stack(all_logits, axis=1)
         all_probs = tf.nn.sigmoid(all_logits)
         all_log_variances = tf.stack(all_log_variances, axis=1)

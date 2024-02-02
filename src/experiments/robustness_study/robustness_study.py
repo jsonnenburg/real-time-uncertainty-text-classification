@@ -43,7 +43,7 @@ def load_bert_model(model_path):
     return model
 
 
-def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 1024):
+def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 2048):
     input_ids, attention_masks, labels = bert_preprocess(data, max_length=max_length)
     data_tf = tf.data.Dataset.from_tensor_slices((
         {
@@ -178,7 +178,11 @@ def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
 def perform_experiment_bert_student(model, preprocessed_data, n_trials):
     results = {}
     for typ in preprocessed_data:
+        if typ not in results:
+            results[typ] = {}
         for level in preprocessed_data[typ]:
+            if level not in results[typ]:
+                results[typ][level] = {}
             data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
 
             result_dict = {'y_true': [], 'y_pred': [], 'y_prob': [], 'predictive_variance': [], 'avg_bald': [], 'f1_score': []}
@@ -213,14 +217,13 @@ def main(args):
     bert_student = load_bert_model(args.student_model_path)
 
     # perform experiments
-    results_bert_teacher = perform_experiment_bert_teacher(bert_teacher, test_data, n_trials=20)
-    results_bert_student = perform_experiment_bert_student(bert_student, test_data, n_trials=20)
-
-    # save results
     os.makedirs(args.output_dir, exist_ok=True)
+
+    results_bert_teacher = perform_experiment_bert_teacher(bert_teacher, test_data, n_trials=20)
     with open(os.path.join(args.output_dir, 'results_bert_teacher.json'), 'w') as f:
         json.dump(results_bert_teacher, f)
 
+    results_bert_student = perform_experiment_bert_student(bert_student, test_data, n_trials=20)
     with open(os.path.join(args.output_dir, 'results_bert_student.json'), 'w') as f:
         json.dump(results_bert_student, f)
 
