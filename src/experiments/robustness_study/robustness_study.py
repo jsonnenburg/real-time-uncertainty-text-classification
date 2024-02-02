@@ -43,7 +43,7 @@ def load_bert_model(model_path):
     return model
 
 
-def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 128):
+def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 1024):
     input_ids, attention_masks, labels = bert_preprocess(data, max_length=max_length)
     data_tf = tf.data.Dataset.from_tensor_slices((
         {
@@ -154,20 +154,17 @@ def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
                 results[typ][level] = {}
             data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
 
-            result_dict = {'y_true': [], 'y_pred': [], 'y_prob': [], 'predictive_variance': [], 'avg_bald': [], 'f1_score': []}
+            result_dict = {'y_true': [], 'y_pred': [], 'y_prob': [], 'predictive_variance': [], 'avg_bald': [],
+                           'f1_score': []}
 
             for _ in tqdm(range(n_trials), desc=f'Performing inference for {typ} {level}'):
-                results = bert_teacher_mc_dropout(model, data_tf, n=30)
-                result_dict['y_true'].append(results['y_true'])
-                result_dict['y_pred'].append(results['y_pred'])
-                result_dict['y_prob'].append(results['y_prob'])
-                result_dict['predictive_variance'].append(results['predictive_variance'])
-                result_dict['avg_bald'].append(results['avg_bald'])
-                result_dict['f1_score'].append(results['f1_score'])
+                trial_results = bert_teacher_mc_dropout(model, data_tf, n=30)
+                for key in result_dict.keys():
+                    result_dict[key].extend(np.ravel(trial_results[key]))
 
-            f1_mean = np.mean(result_dict['f1_score'], axis=0)
-            f1_std = np.std(result_dict['f1_score'], axis=0)
-            avg_bald = np.mean(result_dict['avg_bald'], axis=0)
+            f1_mean = np.mean(result_dict['f1_score'])
+            f1_std = np.std(result_dict['f1_score'])
+            avg_bald = np.mean(result_dict['avg_bald'])
 
             results[typ][level] = {
                 'f1_mean': serialize_metric(f1_mean),
@@ -187,17 +184,13 @@ def perform_experiment_bert_student(model, preprocessed_data, n_trials):
             result_dict = {'y_true': [], 'y_pred': [], 'y_prob': [], 'predictive_variance': [], 'avg_bald': [], 'f1_score': []}
 
             for _ in tqdm(range(n_trials), desc=f'Performing inference for {typ} {level}'):
-                results = bert_student_monte_carlo(model, data_tf, n=30)
-                result_dict['y_true'].append(results['y_true'])
-                result_dict['y_pred'].append(results['y_pred'])
-                result_dict['y_prob'].append(results['y_prob'])
-                result_dict['predictive_variance'].append(results['predictive_variance'])
-                result_dict['avg_bald'].append(results['avg_bald'])
-                result_dict['f1_score'].append(results['f1_score'])
+                trial_results = bert_student_monte_carlo(model, data_tf, n=30)
+                for key in result_dict.keys():
+                    result_dict[key].extend(np.ravel(trial_results[key]))
 
-            f1_mean = np.mean(result_dict['f1_score'], axis=0)
-            f1_std = np.std(result_dict['f1_score'], axis=0)
-            avg_bald = np.mean(result_dict['avg_bald'], axis=0)
+            f1_mean = np.mean(result_dict['f1_score'])
+            f1_std = np.std(result_dict['f1_score'])
+            avg_bald = np.mean(result_dict['avg_bald'])
 
             results[typ][level] = {
                 'f1_mean': serialize_metric(f1_mean),
