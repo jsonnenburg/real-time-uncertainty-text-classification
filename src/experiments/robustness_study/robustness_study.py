@@ -3,19 +3,15 @@ import os
 
 import numpy as np
 from tqdm import tqdm
-import logging
 
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
-from src.utils.logger_config import setup_logging
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss
 from src.utils.metrics import bald_score, f1_score, serialize_metric
 from src.utils.robustness_study import RobustnessStudyDataLoader
 
 import argparse
 import tensorflow as tf
-
-logger = logging.getLogger()
 
 
 def load_bert_model(model_path):
@@ -151,7 +147,11 @@ def bert_student_monte_carlo(model, eval_data, n=50):
 def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
     results = {}
     for typ in preprocessed_data:
+        if typ not in results:
+            results[typ] = {}
         for level in preprocessed_data[typ]:
+            if level not in results[typ]:
+                results[typ][level] = {}
             data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
 
             result_dict = {'y_true': [], 'y_pred': [], 'y_prob': [], 'predictive_variance': [], 'avg_bald': [], 'f1_score': []}
@@ -241,12 +241,6 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--output_dir', type=str)
     args = parser.parse_args()
-
-    os.makedirs(args.output_dir, exist_ok=True)
-    log_dir = os.path.join(args.output_dir, 'logs')
-    os.makedirs(log_dir, exist_ok=True)
-    log_file_path = os.path.join(log_dir, 'robustness_study_log.txt')
-    setup_logging(logger, log_file_path)
 
     main(args)
 
