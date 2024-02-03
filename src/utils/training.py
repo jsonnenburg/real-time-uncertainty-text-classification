@@ -16,7 +16,7 @@ class HistorySaver(tf.keras.callbacks.Callback):
 @dataclass
 class BiLSTMConfig:
     embedding_dropout_rate: float
-    hidden_dropout_rate: 0.1
+    hidden_dropout_rate: float
     lstm_units_1: int
     lstm_units_2: int
 

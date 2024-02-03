@@ -92,8 +92,7 @@ def main(args):
         best_paths = setup_config_directories(args.output_dir, best_config, final_model=True)
         eval_metrics = train_model(paths=best_paths, config=best_config, data=combined_data,
                                    batch_size=args.batch_size, learning_rate=args.learning_rate, epochs=args.epochs,
-                                   max_length=args.max_length, mc_dropout_inference=args.mc_dropout_inference,
-                                   save_model=True)
+                                   max_length=args.max_length, save_model=True)
         f1 = eval_metrics['f1_score']
         logger.info(f"Final f1 score of best model configuration: {f1}")
     if args.cleanup:
@@ -109,7 +108,6 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=16)  # Reduced for testing
     parser.add_argument('--epochs', type=int, default=1)  # Reduced for testing
     parser.add_argument('--max_length', type=int, default=48)
-    parser.add_argument('-mcd', '--mc_dropout_inference', action='store_true', help='Enable MC dropout inference.')
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--save_datasets', action='store_true')

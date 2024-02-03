@@ -9,7 +9,7 @@ import logging
 
 from sklearn.metrics import classification_report
 
-from src.utils.training import HistorySaver, BiLSTMConfig
+from src.utils.training import HistorySaver, TextCNNConfig
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ from src.utils.logger_config import setup_logging
 from src.utils.metrics import (serialize_metric, accuracy_score, precision_score, recall_score, f1_score, nll_score,
                                brier_score, ece_score, bald_score)
 
-from src.models.bilstm_model import create_bilstm_config, BiLSTM
+from src.models.cnn_model import create_textcnn_config, TextCNN
 
 
 def compute_metrics(model, eval_data) -> dict:
@@ -170,14 +170,11 @@ def prepare_data(args):
     return data, embedding_matrix, max_length
 
 
-def train_bilstm(args, dataset: dict, embedding_matrix, max_length, config: BiLSTMConfig, save_model: bool = False):
-    model = BiLSTM(config, embedding_matrix=embedding_matrix, sequence_length=max_length)
+def train_textcnn(args, dataset: dict, embedding_matrix, max_length, config: TextCNNConfig, save_model: bool = False):
+    model = TextCNN(config, embedding_matrix=embedding_matrix, sequence_length=max_length)
 
     config_info = {
-        'embedding_dropout_rate': config.embedding_dropout_rate,
-        'hidden_dropout_rate': config.hidden_dropout_rate,
-        'lstm_units_1': config.lstm_units_1,
-        'lstm_units_2': config.lstm_units_2,
+
         'max_length': max_length,
         'learning_rate': args.learning_rate,
         'batch_size': args.batch_size,
@@ -196,7 +193,7 @@ def train_bilstm(args, dataset: dict, embedding_matrix, max_length, config: BiLS
                                                          save_weights_only=True,
                                                          verbose=1)
 
-        history_callback = HistorySaver(file_path=os.path.join(log_dir, 'bilstm_train.txt'))
+        history_callback = HistorySaver(file_path=os.path.join(log_dir, 'textcnn_train.txt'))
 
         early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience = 3)
 
@@ -259,27 +256,23 @@ def train_bilstm(args, dataset: dict, embedding_matrix, max_length, config: BiLS
     return mc_dropout_metrics
 
 
-def run_bilstm_grid_search(args, dataset: dict, embedding_matrix, max_length: int, embedding_dropout_rates: list, hidden_dropout_rates: list, lstm_units_1: list, lstm_units_2: list):
+def run_cnn_grid_search(args, dataset: dict, embedding_matrix, max_length: int, list_num_filters: list, list_filter_sizes: list, dropout_rates: list):
     best_config = None
     best_f1 = 0
-    for edr in embedding_dropout_rates:
-        for hdr in hidden_dropout_rates:
-            for lu1 in lstm_units_1:
-                for lu2 in lstm_units_2:
-                    config = create_bilstm_config(embedding_dropout_rate=edr,
-                                                  hidden_dropout_rate=hdr,
-                                                  lstm_units_1=lu1,
-                                                  lstm_units_2=lu2)
-                    try:
-                        logger.info(f"Training BiLSTM with config: {config}")
-                        result = train_bilstm(args, dataset=dataset, embedding_matrix=embedding_matrix, max_length=max_length, config=config, save_model=False)
-                        f1 = result['f1_score']
-                        if f1 > best_f1:
-                            best_f1 = f1
-                            best_config = config
-                            logger.info(f"New best config: {config} with F1: {f1}")
-                    except Exception as e:
-                        logger.error(f"Failed to train BiLSTM with config: {config} due to: {e}")
+    for nfilt in list_num_filters:
+        for fsiz in list_filter_sizes:
+            for dr in dropout_rates:
+                config = create_textcnn_config(filter_sizes=fsiz, num_filters=nfilt, dropout_rate=dr)
+                try:
+                    logger.info(f"Training BiLSTM with config: {config}")
+                    result = train_textcnn(args, dataset=dataset, embedding_matrix=embedding_matrix, max_length=max_length, config=config, save_model=False)
+                    f1 = result['f1_score']
+                    if f1 > best_f1:
+                        best_f1 = f1
+                        best_config = config
+                        logger.info(f"New best config: {config} with F1: {f1}")
+                except Exception as e:
+                    logger.error(f"Failed to train BiLSTM with config: {config} due to: {e}")
     logger.info("Finished grid search.")
     logger.info(f"Best config: {best_config} with F1: {best_f1}")
     return best_f1, best_config
@@ -303,18 +296,16 @@ def main(args):
                }
 
     # grid search for best hyperparameters
-    embedding_dropout_rates = [0.1, 0.2, 0.3, 0.4, 0.5]
-    hidden_dropout_rates = [0.1, 0.2, 0.3, 0.4, 0.5]
-    lstm_units_1 = [32, 64, 128, 256]
-    lstm_units_2 = [16, 32, 64, 128]
-    best_f1, best_config = run_bilstm_grid_search(args,
-                                                  dataset=dataset,
-                                                  embedding_matrix=embedding_matrix,
-                                                  max_length=max_length,
-                                                  embedding_dropout_rates=embedding_dropout_rates,
-                                                  hidden_dropout_rates=hidden_dropout_rates,
-                                                  lstm_units_1=lstm_units_1,
-                                                  lstm_units_2=lstm_units_2)
+    list_num_filters = [50, 100, 200]
+    list_filter_sizes = [[3, 4, 5], [4, 5, 6], [5, 6, 7]]
+    dropout_rates = [0.1, 0.2, 0.3, 0.4, 0.5]
+    best_f1, best_config = run_cnn_grid_search(args,
+                                               dataset=dataset,
+                                               embedding_matrix=embedding_matrix,
+                                               max_length=max_length,
+                                               list_num_filters=list_num_filters,
+                                               list_filter_sizes=list_filter_sizes,
+                                               dropout_rates=dropout_rates)
 
     # train BiLSTM with best hyperparameters
     # prepare combined training and validation data
@@ -331,12 +322,11 @@ def main(args):
                'test_data': test_data,
                }
 
-    best_config = BiLSTMConfig(embedding_dropout_rate=best_config.embedding_dropout_rate,
-                               hidden_dropout_rate=best_config.hidden_dropout_rate,
-                               lstm_units_1=best_config.lstm_units_1,
-                               lstm_units_2=best_config.lstm_units_2)
+    best_config = TextCNNConfig(filter_sizes=best_config.filter_sizes,
+                                num_filters=best_config.num_filters,
+                                dropout_rate=best_config.dropout_rate)
 
-    results = train_bilstm(args,
+    results = train_textcnn(args,
                            dataset=dataset,
                            embedding_matrix=embedding_matrix,
                            max_length=max_length,
@@ -361,7 +351,7 @@ if __name__ == "__main__":
 
     log_dir = os.path.join(args.output_dir, 'logs')
     os.makedirs(log_dir, exist_ok=True)
-    log_file_path = os.path.join(log_dir, 'bilstm_train.txt')
+    log_file_path = os.path.join(log_dir, 'textcnn_train.txt')
     setup_logging(logger, log_file_path)
 
     main(args)

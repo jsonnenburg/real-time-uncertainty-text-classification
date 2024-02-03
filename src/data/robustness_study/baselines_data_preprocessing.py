@@ -1,19 +1,7 @@
-from typing import Tuple, Dict, Any
+from typing import Dict
 
 import numpy as np
 import tensorflow as tf
-
-# remove stopwords
-from nltk.corpus import stopwords
-from tensorflow import Tensor
-
-stopwords_set = set(stopwords.words("english"))
-other_exclusions = {"#ff", "ff", "rt"}
-stopwords_set.update(other_exclusions)
-
-
-def remove_stopwords(text: str) -> str:
-    return " ".join(word for word in text.split() if word not in stopwords_set)
 
 
 def pad_sequences(sequences, max_length: int = 48) -> tf.Tensor:
@@ -26,7 +14,7 @@ def pad_sequences(sequences, max_length: int = 48) -> tf.Tensor:
     return tf.keras.preprocessing.sequence.pad_sequences(sequences, maxlen=max_length)
 
 
-def get_embedding_matrix(word_index: Dict, glove_embeddings: Dict, glove_vector_size: int) -> Tensor:
+def get_embedding_matrix(word_index: Dict, glove_embeddings: Dict, glove_vector_size: int) -> tf.Tensor:
     embedding_matrix = np.zeros((len(word_index) + 1, glove_vector_size))
     for word, i in word_index.items():
         embedding_vector = glove_embeddings.get(word)

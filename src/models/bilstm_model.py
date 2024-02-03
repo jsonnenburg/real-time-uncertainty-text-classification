@@ -1,8 +1,6 @@
 import tensorflow as tf
 from src.utils.training import BiLSTMConfig
 
-# TODO: add weight decay ? -> Adam optimizer
-
 
 def create_bilstm_config(embedding_dropout_rate=0.5, hidden_dropout_rate=0.5, lstm_units_1=128, lstm_units_2=64):
     config = BiLSTMConfig(embedding_dropout_rate=embedding_dropout_rate, hidden_dropout_rate=hidden_dropout_rate,

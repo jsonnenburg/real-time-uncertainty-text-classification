@@ -3,12 +3,12 @@ from src.utils.training import TextCNNConfig
 
 # Parameters as per the paper (kim 2014)
 vocab_size = 10000  # Size of the vocabulary
-embedding_size = 300  # Dimensionality of the embeddings
+embedding_size = 200  # Dimensionality of the embeddings
 filter_sizes = [3, 4, 5]  # Filter sizes as mentioned in the paper
 num_filters = 100  # Number of filters per filter size
 
 
-def create_textcnn_config(filter_sizes=None, num_filters = 100, dropout_rate = 0.5):
+def create_textcnn_config(filter_sizes=None, num_filters=100, dropout_rate=0.5):
     if filter_sizes is None:
         filter_sizes = [3, 4, 5]
     config = TextCNNConfig(filter_sizes=filter_sizes, num_filters=num_filters, dropout_rate=dropout_rate)
@@ -42,7 +42,7 @@ class TextCNN(tf.keras.Model):
         self.dropout = tf.keras.layers.Dropout(self.dropout_rate)
         self.classifier = tf.keras.layers.Dense(
             units=1,
-            kernel_initializer=tf.keras.initializers.TruncatedNormal(mean=0., stddev=1.),  # TODO: correct?
+            kernel_initializer=tf.keras.initializers.TruncatedNormal(mean=0., stddev=1.),
             name="classifier",
             trainable=True
         )
@@ -64,9 +64,9 @@ class TextCNN(tf.keras.Model):
         x = self.classifier(x)
         return x
 
-    def mc_dropout_predict(self, inputs, n=20):
+    def mc_dropout_sample(self, inputs, n=50):
         """
-        MC dropout prediction for a single input sample.
+        Performs MC dropout sampling.
 
         :param inputs: Input sample.
         :param n: Number of forward passes to average over.
@@ -76,19 +76,27 @@ class TextCNN(tf.keras.Model):
         all_probs = []
 
         for i in range(n):
-            tf.random.set_seed(range(n)[i])
             logits = self(inputs, training=True)
             probs = tf.nn.sigmoid(logits)
             all_logits.append(logits)
             all_probs.append(probs)
 
-        all_logits = tf.stack(all_logits, axis=0)
-        all_probs = tf.stack(all_probs, axis=0)
-        mean_predictions = tf.reduce_mean(all_logits, axis=0)
-        var_predictions = tf.math.reduce_variance(all_logits, axis=0)
+        all_logits = tf.stack(all_logits, axis=1)
+        all_probs = tf.stack(all_probs, axis=1)
+        mean_predictions = tf.reduce_mean(all_logits, axis=1)
+        var_predictions = tf.math.reduce_variance(all_logits, axis=1)
 
-        return {'logits': all_logits,
-                'probs': all_probs,
-                'mean_predictions': mean_predictions,
-                'var_predictions': var_predictions,
+        return {'logit_samples': all_logits,
+                'prob_samples': all_probs,
+                'mean_logits': mean_predictions,
+                'var_logits': var_predictions,
                 }
+
+    def get_config(self):
+        config = super(TextCNN, self).get_config()
+        config.update({
+            "filter_sizes": self.filter_sizes,
+            "num_filters": self.num_filters,
+            "dropout_rate": self.dropout_rate,
+        })
+        return config

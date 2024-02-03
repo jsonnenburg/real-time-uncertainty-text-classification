@@ -14,6 +14,13 @@ from sklearn.model_selection import train_test_split
 
 SEED = 42
 
+# remove stopwords
+from nltk.corpus import stopwords
+
+stopwords_set = set(stopwords.words("english"))
+other_exclusions = {"#ff", "ff", "rt"}
+stopwords_set.update(other_exclusions)
+
 
 class DataLoader:
 
@@ -180,3 +187,7 @@ def preprocess(text: str) -> str:
     text = remove_multiple_spaces(text)
     text = text.lower()
     return text
+
+
+def remove_stopwords(text: str) -> str:
+    return " ".join(word for word in text.split() if word not in stopwords_set)
