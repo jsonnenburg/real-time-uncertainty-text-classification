@@ -77,13 +77,24 @@ class BiLSTM(tf.keras.Model):
             all_logits.append(logits)
             all_probs.append(probs)
 
-        all_logits = tf.stack(all_logits, axis=0)
-        all_probs = tf.stack(all_probs, axis=0)
-        mean_predictions = tf.reduce_mean(all_logits, axis=0)
-        var_predictions = tf.math.reduce_variance(all_logits, axis=0)
+        all_logits = tf.stack(all_logits, axis=1)
+        all_probs = tf.stack(all_probs, axis=1)
+        mean_predictions = tf.reduce_mean(all_logits, axis=1)
+        var_predictions = tf.math.reduce_variance(all_logits, axis=1)
 
         return {'logit_samples': all_logits,
                 'prob_samples': all_probs,
                 'mean_logits': mean_predictions,
                 'var_logits': var_predictions,
                 }
+
+    def get_config(self):
+        config = super(BiLSTM, self).get_config()
+        config.update({
+            "embedding_dropout_rate": self.embedding_dropout_rate,
+            "hidden_dropout_rate": self.hidden_dropout_rate,
+            "lstm_units_1": self.lstm_units_1,
+            "lstm_units_2": self.lstm_units_2,
+            "sequence_length": self.sequence_length,
+        })
+        return config

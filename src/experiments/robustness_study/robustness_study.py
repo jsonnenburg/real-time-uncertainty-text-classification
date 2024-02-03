@@ -154,22 +154,11 @@ def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
                 results[typ][level] = {}
             data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
 
-            result_dict = {'y_true': [], 'y_pred': [], 'y_prob': [], 'predictive_variance': [], 'avg_bald': [],
-                           'f1_score': []}
-
-            for _ in tqdm(range(n_trials), desc=f'Performing inference for {typ} {level}'):
-                trial_results = bert_teacher_mc_dropout(model, data_tf, n=30)
-                for key in result_dict.keys():
-                    result_dict[key].extend(np.ravel(trial_results[key]))
-
-            f1_mean = np.mean(result_dict['f1_score'])
-            f1_std = np.std(result_dict['f1_score'])
-            avg_bald = np.mean(result_dict['avg_bald'])
+            outputs = bert_teacher_mc_dropout(model, data_tf, n=50)
 
             results[typ][level] = {
-                'f1_mean': serialize_metric(f1_mean),
-                'f1_std': serialize_metric(f1_std),
-                'avg_bald': serialize_metric(avg_bald),
+                'f1_score': serialize_metric(outputs['f1_score']),
+                'avg_bald': serialize_metric(outputs['avg_bald']),
             }
 
     return results
@@ -185,21 +174,11 @@ def perform_experiment_bert_student(model, preprocessed_data, n_trials):
                 results[typ][level] = {}
             data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
 
-            result_dict = {'y_true': [], 'y_pred': [], 'y_prob': [], 'predictive_variance': [], 'avg_bald': [], 'f1_score': []}
-
-            for _ in tqdm(range(n_trials), desc=f'Performing inference for {typ} {level}'):
-                trial_results = bert_student_monte_carlo(model, data_tf, n=30)
-                for key in result_dict.keys():
-                    result_dict[key].extend(np.ravel(trial_results[key]))
-
-            f1_mean = np.mean(result_dict['f1_score'])
-            f1_std = np.std(result_dict['f1_score'])
-            avg_bald = np.mean(result_dict['avg_bald'])
+            outputs = bert_student_monte_carlo(model, data_tf, n=50)
 
             results[typ][level] = {
-                'f1_mean': serialize_metric(f1_mean),
-                'f1_std': serialize_metric(f1_std),
-                'avg_bald': serialize_metric(avg_bald),
+                'f1_score': serialize_metric(outputs['f1_score']),
+                'avg_bald': serialize_metric(outputs['avg_bald']),
             }
 
     return results

@@ -36,16 +36,11 @@ def get_embedding_matrix(word_index: Dict, glove_embeddings: Dict, glove_vector_
 
 
 def load_glove_embeddings(glove_file: str) -> Dict:
-    """
-    Loads the GloVe embeddings.
-    :param glove_file: The GloVe file.
-    :return: The GloVe embeddings.
-    """
     embeddings_index = {}
     with open(glove_file, encoding="utf8") as f:
         for line in f:
             values = line.split()
             word = values[0]
-            coefs = tf.constant(values[1:], dtype=tf.float32)
+            coefs = np.asarray(values[1:], dtype=np.float32)
             embeddings_index[word] = coefs
     return embeddings_index

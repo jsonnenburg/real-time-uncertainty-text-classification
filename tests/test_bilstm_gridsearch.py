@@ -13,7 +13,8 @@ from src.utils.training import HistorySaver, BiLSTMConfig
 
 logger = logging.getLogger(__name__)
 
-from src.data.robustness_study.baselines_data_preprocessing import pad_sequences, get_embedding_matrix, load_glove_embeddings, remove_stopwords
+from src.data.robustness_study.baselines_data_preprocessing import pad_sequences, get_embedding_matrix, \
+    load_glove_embeddings, remove_stopwords
 from src.utils.data import SimpleDataLoader
 from src.utils.logger_config import setup_logging
 
@@ -135,6 +136,11 @@ def prepare_data(args):
         raise
     dataset = data_loader.get_dataset()
 
+    subset_size = 100
+    dataset.train = dataset.train.sample(n=min(subset_size, len(dataset.train)), random_state=args.seed)
+    dataset.val = dataset.val.sample(n=min(subset_size, len(dataset.val)), random_state=args.seed)
+    dataset.test = dataset.test.sample(n=min(subset_size, len(dataset.test)), random_state=args.seed)
+
     dataset.train['text'] = dataset.train['text'].apply(remove_stopwords)
     dataset.val['text'] = dataset.val['text'].apply(remove_stopwords)
     dataset.test['text'] = dataset.test['text'].apply(remove_stopwords)
@@ -174,15 +180,15 @@ def prepare_data(args):
     return data, embedding_matrix, max_length
 
 
-def train_bilstm(args, data: dict, config: BiLSTMConfig, save_model: bool = False):
-    model = BiLSTM(config, embedding_matrix=data['embedding_matrix'], sequence_length=data['max_length'])
+def train_bilstm(args, dataset: dict, embedding_matrix, max_length, config: BiLSTMConfig, save_model: bool = False):
+    model = BiLSTM(config, embedding_matrix=embedding_matrix, sequence_length=max_length)
 
     config_info = {
         'embedding_dropout_rate': config.embedding_dropout_rate,
         'hidden_dropout_rate': config.hidden_dropout_rate,
         'lstm_units_1': config.lstm_units_1,
         'lstm_units_2': config.lstm_units_2,
-        'max_length': data['max_length'],
+        'max_length': max_length,
         'learning_rate': args.learning_rate,
         'batch_size': args.batch_size,
         'epochs': args.epochs
@@ -205,7 +211,8 @@ def train_bilstm(args, data: dict, config: BiLSTMConfig, save_model: bool = Fals
         optimizer = tf.keras.optimizers.Adam(learning_rate=args.learning_rate)
         model.compile(optimizer=optimizer,
                       loss='binary_crossentropy',
-                      metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
+                      metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(),
+                               tf.keras.metrics.Recall()],
                       run_eagerly=True)
 
         latest_checkpoint = tf.train.latest_checkpoint(model_dir)
@@ -214,50 +221,54 @@ def train_bilstm(args, data: dict, config: BiLSTMConfig, save_model: bool = Fals
             logger.info(f"Found model files, loaded weights from {latest_checkpoint}")
             logger.info('Skipping training.')
         else:
-            model.fit(data['X_train'], data['y_train'],
+            model.fit(dataset['train_data'],
                       batch_size=args.batch_size,
                       epochs=args.epochs,
-                      validation_data=(data['X_val'], data['y_val']),
+                      validation_data=(dataset['test_data']),
                       callbacks=[cp_callback, history_callback])
 
         result_dir = os.path.join(args.output_dir, 'results')
         os.makedirs(result_dir, exist_ok=True)
 
-        eval_metrics = compute_metrics(model, data['X_val'])
+        eval_metrics = compute_metrics(model, dataset['test_data'])
         with open(os.path.join(result_dir, 'results_stochastic_pass.json'), 'w') as f:
             json.dump(eval_metrics, f)
         logger.info(
             f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'], zero_division=0)}")
 
         logger.info("Computing MC dropout metrics.")
-        mc_dropout_metrics = compute_mc_dropout_metrics(model, data['X_val'])
+        mc_dropout_metrics = compute_mc_dropout_metrics(model, dataset['test_data'])
         with open(os.path.join(result_dir, 'results.json'), 'w') as f:
             json.dump(mc_dropout_metrics, f)
-        logger.info(f"\n==== Classification report  (MC dropout) ====\n {classification_report(mc_dropout_metrics['y_true'], mc_dropout_metrics['y_pred'], zero_division=0)}")
+        logger.info(
+            f"\n==== Classification report  (MC dropout) ====\n {classification_report(mc_dropout_metrics['y_true'], mc_dropout_metrics['y_pred'], zero_division=0)}")
     else:
         optimizer = tf.keras.optimizers.Adam(learning_rate=args.learning_rate)
+        logger.info("Compiling model.")
         model.compile(optimizer=optimizer,
                       loss='binary_crossentropy',
                       metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(),
                                tf.keras.metrics.Recall()],
                       run_eagerly=True)
-        model.fit(data['X_train'], data['y_train'],
+        logger.info("Compiled model.")
+        model.fit(dataset['train_data'],
                   batch_size=args.batch_size,
                   epochs=args.epochs,
-                  validation_data=(data['X_val'], data['y_val']))
-        eval_metrics = compute_metrics(model, data['X_val'])
+                  validation_data=(dataset['val_data']))
+        eval_metrics = compute_metrics(model, dataset['val_data'])
         logger.info(
             f"\n==== Classification report  (weight averaging) ====\n {classification_report(eval_metrics['y_true'], eval_metrics['y_pred'], zero_division=0)}")
 
         logger.info("Computing MC dropout metrics.")
-        mc_dropout_metrics = compute_mc_dropout_metrics(model, data['X_val'])
+        mc_dropout_metrics = compute_mc_dropout_metrics(model, dataset['val_data'])
         logger.info(
             f"\n==== Classification report  (MC dropout) ====\n {classification_report(mc_dropout_metrics['y_true'], mc_dropout_metrics['y_pred'], zero_division=0)}")
 
     return mc_dropout_metrics
 
 
-def run_bilstm_grid_search(args, data: dict, embedding_dropout_rates: list, hidden_dropout_rates: list, lstm_units_1: list, lstm_units_2: list):
+def run_bilstm_grid_search(args, dataset: dict, embedding_matrix, max_length: int, embedding_dropout_rates: list,
+                           hidden_dropout_rates: list, lstm_units_1: list, lstm_units_2: list):
     best_config = None
     best_f1 = 0
     for edr in embedding_dropout_rates:
@@ -270,8 +281,9 @@ def run_bilstm_grid_search(args, data: dict, embedding_dropout_rates: list, hidd
                                                   lstm_units_2=lu2)
                     try:
                         logger.info(f"Training BiLSTM with config: {config}")
-                        result = train_bilstm(args, data, config, save_model=False)
-                        f1 = result['f1']
+                        result = train_bilstm(args, dataset=dataset, embedding_matrix=embedding_matrix,
+                                              max_length=max_length, config=config, save_model=False)
+                        f1 = result['f1_score']
                         if f1 > best_f1:
                             best_f1 = f1
                             best_config = config
@@ -287,28 +299,61 @@ def main(args):
     # load and preprocess data
     data, embedding_matrix, max_length = prepare_data(args)
 
+    train_data = tf.data.Dataset.from_tensor_slices((data['X_train'], data['y_train']))
+    val_data = tf.data.Dataset.from_tensor_slices((data['X_val'], data['y_val']))
+    test_data = tf.data.Dataset.from_tensor_slices((data['X_test'], data['y_test']))
+
+    train_data = train_data.shuffle(buffer_size=10000).batch(args.batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+    val_data = val_data.batch(args.batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+    test_data = test_data.batch(args.batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+
+    dataset = {'train_data': train_data,
+               'val_data': val_data,
+               'test_data': test_data
+               }
+
     # grid search for best hyperparameters
-    embedding_dropout_rates = [0.1, 0.2, 0.3, 0.4, 0.5]
-    hidden_dropout_rates = [0.1, 0.2, 0.3, 0.4, 0.5]
-    lstm_units_1 = [32, 64, 128, 256]
-    lstm_units_2 = [16, 32, 64, 128]
-    best_f1, best_config = run_bilstm_grid_search(args, data, embedding_dropout_rates, hidden_dropout_rates, lstm_units_1, lstm_units_2)
+    embedding_dropout_rates = [0.1]
+    hidden_dropout_rates = [0.1]
+    lstm_units_1 = [32]
+    lstm_units_2 = [16]
+    best_f1, best_config = run_bilstm_grid_search(args,
+                                                  dataset=dataset,
+                                                  embedding_matrix=embedding_matrix,
+                                                  max_length=max_length,
+                                                  embedding_dropout_rates=embedding_dropout_rates,
+                                                  hidden_dropout_rates=hidden_dropout_rates,
+                                                  lstm_units_1=lstm_units_1,
+                                                  lstm_units_2=lstm_units_2)
 
     # train BiLSTM with best hyperparameters
     # prepare combined training and validation data
     data['X_train'] = tf.concat([data['X_train'], data['X_val']], axis=0)
     data['y_train'] = tf.concat([data['y_train'], data['y_val']], axis=0)
-    data['X_val'] = data['X_test']
-    data['y_val'] = data['y_test']
+
+    train_data = tf.data.Dataset.from_tensor_slices((data['X_train'], data['y_train']))
+    test_data = tf.data.Dataset.from_tensor_slices((data['X_test'], data['y_test']))
+
+    train_data = train_data.shuffle(buffer_size=10000).batch(args.batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+    test_data = test_data.batch(args.batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+
+    dataset = {'train_data': train_data,
+               'test_data': test_data,
+               }
 
     best_config = BiLSTMConfig(embedding_dropout_rate=best_config.embedding_dropout_rate,
-                                 hidden_dropout_rate=best_config.hidden_dropout_rate,
-                                    lstm_units_1=best_config.lstm_units_1,
-                                    lstm_units_2=best_config.lstm_units_2)
+                               hidden_dropout_rate=best_config.hidden_dropout_rate,
+                               lstm_units_1=best_config.lstm_units_1,
+                               lstm_units_2=best_config.lstm_units_2)
 
-    results = train_bilstm(args, data, best_config, save_model=True)
+    results = train_bilstm(args,
+                           dataset=dataset,
+                           embedding_matrix=embedding_matrix,
+                           max_length=max_length,
+                           config=best_config,
+                           save_model=True)
 
-    logger.info(f"Final F1: {results['f1']}")
+    logger.info(f"Final F1: {results['f1_score']}")
     logger.info("Finished training.")
 
 
@@ -316,16 +361,12 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--input_data_dir", type=str, help="Path to the input data directory.")
     ap.add_argument("--output_dir", type=str, help="Path to the output directory.")
-    ap.add_argument("--max_vocab_size", type=int, help="Maximum vocabulary size.")
-    ap.add_argument("--glove_vector_size", type=int, help="GloVe vector size.")
     ap.add_argument("--max_length", type=int, help="Maximum length of the input sequences.")
-    ap.add_argument("--embedding_dropout_rate", type=float, help="Embedding dropout rate.")
-    ap.add_argument("--hidden_dropout_rate", type=float, help="Hidden dropout rate.")
-    ap.add_argument("--lstm_units_1", type=int, help="Number of units in the first LSTM layer.")
-    ap.add_argument("--lstm_units_2", type=int, help="Number of units in the second LSTM layer.")
-    ap.add_argument("--learning_rate", type=float, help="Learning rate.")
+    ap.add_argument("--max_vocab_size", type=int, default=10000, help="Maximum vocabulary size.")
+    ap.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate.")
     ap.add_argument("--batch_size", type=int, help="Batch size.")
     ap.add_argument("--epochs", type=int, help="Number of epochs.")
+    ap.add_argument("--seed", type=int, default=42, help="Random seed.")
     args = ap.parse_args()
 
     log_dir = os.path.join(args.output_dir, 'logs')
