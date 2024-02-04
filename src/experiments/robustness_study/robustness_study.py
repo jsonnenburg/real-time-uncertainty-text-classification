@@ -2,16 +2,19 @@ import json
 import os
 
 import numpy as np
-from tqdm import tqdm
+import logging
 
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
+from src.utils.logger_config import setup_logging
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss
 from src.utils.metrics import bald_score, f1_score, serialize_metric
 from src.utils.robustness_study import RobustnessStudyDataLoader
 
 import argparse
 import tensorflow as tf
+
+logger = logging.getLogger(__name__)
 
 
 def load_bert_model(model_path):
@@ -150,17 +153,22 @@ def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
         if typ not in results:
             results[typ] = {}
         for level in preprocessed_data[typ]:
+            logger.info(f"Computing results for {typ} - {level}")
             if level not in results[typ]:
                 results[typ][level] = {}
+            logger.info(f"Preprocessing data...")
             data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
 
+            logger.info(f"Performing MC dropout...")
             outputs = bert_teacher_mc_dropout(model, data_tf, n=50)
 
             results[typ][level] = {
                 'f1_score': serialize_metric(outputs['f1_score']),
                 'avg_bald': serialize_metric(outputs['avg_bald']),
             }
+            logger.info(f"Successfully computed results for {typ} - {level}")
 
+    logger.info("Finished all experiments")
     return results
 
 
@@ -170,27 +178,34 @@ def perform_experiment_bert_student(model, preprocessed_data, n_trials):
         if typ not in results:
             results[typ] = {}
         for level in preprocessed_data[typ]:
+            logger.info(f"Computing results for {typ} - {level}")
             if level not in results[typ]:
                 results[typ][level] = {}
+            logger.info(f"Preprocessing data...")
             data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
 
+            logger.info(f"Performing MC sampling...")
             outputs = bert_student_monte_carlo(model, data_tf, n=50)
 
             results[typ][level] = {
                 'f1_score': serialize_metric(outputs['f1_score']),
                 'avg_bald': serialize_metric(outputs['avg_bald']),
             }
+            logger.info(f"Successfully computed results for {typ} - {level}")
 
+    logger.info("Finished all experiments")
     return results
 
 
 def main(args):
     # load data from data/robustness_study/noisy
+    logger.info(f"Loading data from {args.data_dir}")
     data_loader = RobustnessStudyDataLoader(args.data_dir)
     data_loader.load_data()
 
     test_data = data_loader.data
 
+    logger.info(f"Loading models from {args.teacher_model_path} and {args.student_model_path}")
     # load models
     bert_teacher = load_bert_model(args.teacher_model_path)
     bert_student = load_bert_model(args.student_model_path)
@@ -198,6 +213,7 @@ def main(args):
     # perform experiments
     os.makedirs(args.output_dir, exist_ok=True)
 
+    logger.info("Performing experiment...")
     results_bert_teacher = perform_experiment_bert_teacher(bert_teacher, test_data, n_trials=20)
     with open(os.path.join(args.output_dir, 'results_bert_teacher.json'), 'w') as f:
         json.dump(results_bert_teacher, f)
@@ -205,6 +221,8 @@ def main(args):
     results_bert_student = perform_experiment_bert_student(bert_student, test_data, n_trials=20)
     with open(os.path.join(args.output_dir, 'results_bert_student.json'), 'w') as f:
         json.dump(results_bert_student, f)
+
+    logger.info("Finished experiment")
 
 
 if __name__ == '__main__':
@@ -216,6 +234,11 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--output_dir', type=str)
     args = parser.parse_args()
+
+    log_dir = os.path.join(args.output_dir, 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_file_path = os.path.join(log_dir, 'bilstm_train.txt')
+    setup_logging(logger, log_file_path)
 
     main(args)
 
