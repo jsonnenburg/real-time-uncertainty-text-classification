@@ -21,4 +21,4 @@ pip install -r slurm_requirements.txt
 export TF_GPU_ALLOCATOR=cuda_malloc_async
 
 python3.8 src/training/bilstm_gridsearch.py --input_data_dir data/robustness_study/preprocessed_no_stopwords \
---output_dir out/bilstm --epochs 200 --max_length 48 --batch_size 2048 --learning_rate 0.0002
+--output_dir out/bilstm --epochs 200 --max_length 48 --batch_size 2048 --learning_rate 0.002

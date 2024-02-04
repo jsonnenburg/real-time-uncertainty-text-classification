@@ -303,10 +303,10 @@ def main(args):
                }
 
     # grid search for best hyperparameters
-    embedding_dropout_rates = [0.1, 0.2, 0.3, 0.4, 0.5]
-    hidden_dropout_rates = [0.1, 0.2, 0.3, 0.4, 0.5]
-    lstm_units_1 = [32, 64, 128, 256]
-    lstm_units_2 = [16, 32, 64, 128]
+    embedding_dropout_rates = [0.2, 0.3, 0.4]
+    hidden_dropout_rates = [0.2, 0.3, 0.4]
+    lstm_units_1 = [256, 512]
+    lstm_units_2 = [128, 256]
     best_f1, best_config = run_bilstm_grid_search(args,
                                                   dataset=dataset,
                                                   embedding_matrix=embedding_matrix,
