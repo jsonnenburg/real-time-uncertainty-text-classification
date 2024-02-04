@@ -18,5 +18,5 @@ pip install --upgrade pip
 
 pip install -r slurm_requirements.txt
 
-python3.8 src/experiments/distribution_distillation/teacher_performance.py --input_data_dir out/bert_teacher_gridsearch/data \
---teacher_model_save_dir out/bert_teacher/final_hd020_ad030_cd020/model --output_dir out/bert_teacher/final_hd020_ad030_cd020 \
+python3.8 src/experiments/distribution_distillation/teacher_performance.py --input_data_dir out/bert_teacher/data \
+--teacher_model_save_dir out/bert_teacher/final_hd020_ad030_cd020/model --output_dir out/bert_teacher/final_hd020_ad030_cd020

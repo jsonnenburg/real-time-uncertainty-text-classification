@@ -8,9 +8,11 @@ import os
 import time
 
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 
-from src.distribution_distillation.sample_from_teacher import load_data, preprocess_transfer_data
+from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
+from src.distribution_distillation.sample_from_teacher import load_data
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
 from src.utils.data import Dataset
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss
@@ -56,18 +58,28 @@ def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
     }
 
 
+def preprocess_test_data(df: pd.DataFrame) -> tf.data.Dataset:
+    input_ids, attention_masks, labels = bert_preprocess(df)
+    dataset = tf.data.Dataset.from_tensor_slices((
+        {
+            'input_ids': input_ids,
+            'attention_mask': attention_masks
+        },
+        labels
+    )).batch(256).prefetch(tf.data.experimental.AUTOTUNE)
+    return dataset
+
+
 def main(args):
     # load config of the best teacher configuration as determined by grid search
     with open(os.path.join(args.teacher_model_save_dir, 'config.json'), 'r') as f:
         teacher_config = json.load(f)
 
     # load dataset which will be used to create augmented dataset + test set for student training
-    input_dataset = Dataset(train=load_data(args.input_data_dir, 'combined_train'),
-                            test=load_data(args.input_data_dir, 'combined_test'))
+    input_dataset = Dataset(test=load_data(args.input_data_dir, 'combined_test'))
 
     # preprocess transfer training set
-    training_set_preprocessed = preprocess_transfer_data(input_dataset.train)
-    test_set_preprocessed = preprocess_transfer_data(input_dataset.test)
+    test_set_preprocessed = preprocess_test_data(input_dataset.test)
 
     # load BERT teacher model with best configuration
     config = create_bert_config(teacher_config['hidden_dropout_prob'],
@@ -98,9 +110,11 @@ def main(args):
     os.makedirs(result_path, exist_ok=True)
 
     for n_mcd in mc_dropout_samples:
+        print(f"Computing metrics for {n_mcd} MC dropout samples")
         results = compute_mc_dropout_metrics(teacher, test_set_preprocessed, n=n_mcd)
         with open(os.path.join(result_path, f'results_{n_mcd}.json'), 'w') as f:
             json.dump(results, f)
+        print(f"Results for {n_mcd} MC dropout samples saved to {result_path}.")
 
 
 if __name__ == '__main__':
