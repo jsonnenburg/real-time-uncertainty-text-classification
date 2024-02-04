@@ -155,7 +155,7 @@ def preprocess_transfer_data(df: pd.DataFrame) -> tf.data.Dataset:
             'attention_mask': attention_masks
         },
         labels
-    )).batch(32)
+    )).batch(256).prefetch(tf.data.experimental.AUTOTUNE)
     return dataset
 
 
