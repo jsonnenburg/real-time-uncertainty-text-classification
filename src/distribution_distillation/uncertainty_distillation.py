@@ -135,7 +135,7 @@ def main(args):
     student_model.compile(
         optimizer=optimizer,
         loss={'classifier': shen_loss(n_samples=args.m*args.k), 'log_variance': null_loss},
-        metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
+        metrics=[{'classifier': 'binary_crossentropy'}, tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
         run_eagerly=True
     )
     logger.info('Student model compiled.')
@@ -175,7 +175,7 @@ def main(args):
     }
 
     train_data = transfer_get_tf_dataset(tokenized_dataset, 'train')
-    train_data = train_data.shuffle(buffer_size=1024).batch(args.batch_size).cache().prefetch(tf.data.AUTOTUNE)
+    train_data = train_data.shuffle(buffer_size=10000).batch(args.batch_size).cache().prefetch(tf.data.AUTOTUNE)
     # handle case where we group train and val together (best model config) and fine-tune on both
     if tokenized_dataset['val'] is not None:
         val_data = transfer_get_tf_dataset(tokenized_dataset, 'val')
@@ -205,10 +205,10 @@ def main(args):
         student_model.load_weights(latest_checkpoint).expect_partial()
         logger.info(f"Found student model files, loaded weights from {latest_checkpoint}")
         logger.info('Skipping training.')
-    elif latest_teacher_checkpoint:
-        student_model.load_weights(latest_teacher_checkpoint).expect_partial()
-        logger.info(f"Found teacher model files, loaded weights from {latest_teacher_checkpoint}")
     else:
+        if latest_teacher_checkpoint:
+            student_model.load_weights(latest_teacher_checkpoint).expect_partial()
+            logger.info(f"Found teacher model files, loaded weights from {latest_teacher_checkpoint}")
         logger.info('Starting fine-tuning...')
         student_model.fit(
             train_data,

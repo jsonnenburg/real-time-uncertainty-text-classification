@@ -73,7 +73,7 @@ def preprocess_test_data(df: pd.DataFrame) -> tf.data.Dataset:
             'attention_mask': attention_masks
         },
         labels
-    )).batch(256).prefetch(tf.data.experimental.AUTOTUNE)
+    )).batch(256).cache().prefetch(tf.data.experimental.AUTOTUNE)
     return dataset
 
 

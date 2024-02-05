@@ -174,7 +174,7 @@ def prepare_data(dataset: Dataset, max_length: int = 48, batch_size: int = 32):
     }
 
     train_data = get_tf_dataset(tokenized_dataset, 'train')
-    train_data = train_data.shuffle(buffer_size=1024).batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
+    train_data = train_data.shuffle(buffer_size=10000).batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
     # handle case where we group train and val together (best model config) and fine-tune on both
     if tokenized_dataset['val'] is not None:
         val_data = get_tf_dataset(tokenized_dataset, 'val')

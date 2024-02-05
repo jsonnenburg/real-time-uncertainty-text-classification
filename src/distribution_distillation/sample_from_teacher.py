@@ -4,6 +4,7 @@ Sampling from the teacher model's posterior predictive distribution on the trans
 import argparse
 import json
 import os
+import random
 
 import pandas as pd
 from tqdm import tqdm
@@ -46,13 +47,11 @@ def epistemic_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
         'predictions': []
     }
 
-    if seed_list is None:
-        seed_list = range(m)
-
     for text, features, labels in tqdm(data, desc="Processing Data"):
         all_logits = []
         for i in range(m):
-            tf.random.set_seed(seed_list[i])
+            rand_seed = random.randint(0, 2 ** 32 - 1)
+            tf.random.set_seed(rand_seed)
             outputs = model(features, training=True)
             logits = outputs['logits']
             all_logits.append(logits)
@@ -96,14 +95,12 @@ def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
         'predictions': []
     }
 
-    if seed_list is None:
-        seed_list = range(m)
-
     for text, features, labels in tqdm(data, desc="Processing Data"):
         all_logits = []
         all_log_variances = []
-        for i in range(m):
-            tf.random.set_seed(seed_list[i])
+        for _ in range(m):
+            rand_seed = random.randint(0, 2 ** 32 - 1)
+            tf.random.set_seed(rand_seed)
             outputs = model(features, training=True)
             logits = outputs.logits
             log_variances = outputs.log_variances
@@ -155,7 +152,7 @@ def preprocess_transfer_data(df: pd.DataFrame) -> tf.data.Dataset:
             'attention_mask': attention_masks
         },
         labels
-    )).batch(256).prefetch(tf.data.experimental.AUTOTUNE)
+    )).batch(256).cache().prefetch(tf.data.experimental.AUTOTUNE)
     return dataset
 
 
@@ -191,7 +188,7 @@ def main(args):
         teacher.load_weights(latest_checkpoint).expect_partial()
 
     teacher.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=2e-5),
+            optimizer=tf.keras.optimizers.Adam(learning_rate=teacher_config.learning_rate),
             loss={'classifier': bayesian_binary_crossentropy, 'log_variance': null_loss},
             metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
             run_eagerly=True
