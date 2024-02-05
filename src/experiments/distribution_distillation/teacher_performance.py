@@ -10,13 +10,14 @@ import time
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from tqdm import tqdm
 
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
 from src.distribution_distillation.sample_from_teacher import load_data
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
 from src.utils.data import Dataset
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss
-from src.utils.metrics import serialize_metric, f1_score, ece_score
+from src.utils.metrics import serialize_metric, f1_score, ece_score, bald_score
 
 
 def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
@@ -45,16 +46,22 @@ def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
 
     all_labels = np.array(total_labels)
 
+    y_prob_samples = np.concatenate(total_probs, axis=0)
+
     y_prob_mcd = tf.nn.sigmoid(total_mean_logits).numpy().reshape(all_labels.shape)
     y_pred_mcd = y_prob_mcd.round(0).astype(int)
     y_true = all_labels
 
     f1 = f1_score(y_true, y_pred_mcd)
     ece = ece_score(y_true, y_pred_mcd, y_prob_mcd)
+    bald = bald_score(y_prob_samples)
+    avg_bald = np.mean(bald)
+
     return {
         "average_inference_time": serialize_metric(average_inference_time),
         "f1_score": serialize_metric(f1),
         "ece_score": serialize_metric(ece),
+        "avg_bald": serialize_metric(avg_bald)
     }
 
 
@@ -99,9 +106,8 @@ def main(args):
     teacher.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=2e-5),
             loss={'classifier': bayesian_binary_crossentropy, 'log_variance': null_loss},
-            metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
-            run_eagerly=True
-        )
+            metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
+    )
 
     # compute metrics for different number of MC dropout samples
     mc_dropout_samples = [1, 10, 20, 30, 40, 50]
@@ -109,9 +115,27 @@ def main(args):
     result_path = os.path.join(args.output_dir, 'results')
     os.makedirs(result_path, exist_ok=True)
 
-    for n_mcd in mc_dropout_samples:
+    for n_mcd in tqdm(mc_dropout_samples):
         print(f"Computing metrics for {n_mcd} MC dropout samples")
-        results = compute_mc_dropout_metrics(teacher, test_set_preprocessed, n=n_mcd)
+        result_dict = {'average_inference_time': [], 'f1_score': [], 'ece_score': [], 'avg_bald': []}
+
+        for _ in range(10):
+            trial_results = compute_mc_dropout_metrics(teacher, test_set_preprocessed, n=n_mcd)
+            for key in result_dict.keys():
+                result_dict[key].extend(np.ravel(trial_results[key]))
+
+        avg_inference_time_mean = np.mean(result_dict['average_inference_time'])
+        f1_mean = np.mean(result_dict['f1_score'])
+        ece_mean = np.mean(result_dict['ece_score'])
+        avg_bald_mean = np.mean(result_dict['avg_bald'])
+
+        results = {
+            'average_inference_time': serialize_metric(avg_inference_time_mean),
+            'f1_score': serialize_metric(f1_mean),
+            'avg_bald': serialize_metric(avg_bald_mean),
+            'ece_score': serialize_metric(ece_mean),
+        }
+
         with open(os.path.join(result_path, f'results_{n_mcd}.json'), 'w') as f:
             json.dump(results, f)
         print(f"Results for {n_mcd} MC dropout samples saved to {result_path}.")

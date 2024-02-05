@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 from transformers import BertConfig, TFBertModel
 import tensorflow as tf
 from transformers.modeling_tf_outputs import TFSequenceClassifierOutput
@@ -150,7 +152,8 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
         all_logits = []
         all_log_variances = []
         for i in range(n):
-            tf.random.set_seed(range(n)[i])
+            rand_seed = random.randint(0, 2 ** 32 - 1)
+            tf.random.set_seed(rand_seed)
             outputs = self(inputs, training=True)
             all_logits.append(outputs.logits)
             all_log_variances.append(outputs.log_variances)
