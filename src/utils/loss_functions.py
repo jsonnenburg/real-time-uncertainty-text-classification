@@ -76,7 +76,7 @@ def gaussian_mle_loss(y_true, y_pred, n_samples: int) -> tf.Tensor:
     return loss
 
 
-def shen_loss(loss_weight: int = 1, n_samples: int = 50):
+def shen_loss(loss_weight: float = 1.0, n_samples: int = 50):
     def shen_loss_internal(y_true, y_pred) -> tf.Tensor:
         """
         Transfer learning loss function from Shen et al. (2021) for fine-tuning the student model.

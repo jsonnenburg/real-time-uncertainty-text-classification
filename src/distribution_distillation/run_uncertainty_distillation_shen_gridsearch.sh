@@ -1,0 +1,43 @@
+#!/bin/bash
+#SBATCH --job-name=rtuq-student-gridsearch
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:v10032gb:2
+#SBATCH --mem=32G
+#SBATCH --output=shen-student-gridsearch_%j.out
+#SBATCH --time=30:00:00
+
+module load python/3.8
+module load cuda/11.3
+
+export PYTHONPATH="/vol/fob-vol1/nebenf23/sonnenbj/real-time-uncertainty-text-classification/"
+
+python3.8 -m venv env
+source env/bin/activate
+echo "PYTHONPATH after activating venv: $PYTHONPATH"
+pip install --upgrade pip
+pip install -r slurm_requirements.txt
+
+shen_loss_weights=(0.5 1 2)
+learning_rates=(0.002 0.0002 0.00004)
+epochs_list=(2 5 10)
+
+for shen_loss_weight in "${shen_loss_weights[@]}"; do
+    for learning_rate in "${learning_rates[@]}"; do
+        for epochs in "${epochs_list[@]}"; do
+            version_identifier="shen_${shen_loss_weight}_lr${learning_rate}_e${epochs}"
+            python3.8 src/distribution_distillation/uncertainty_distillation.py \
+            --transfer_data_dir data/distribution_distillation \
+            --teacher_model_save_dir out/bert_teacher/final_hd020_ad030_cd020/model \
+            --version_identifier "$version_identifier" \
+            --shen_loss_weight $shen_loss_weight \
+            --learning_rate $learning_rate \
+            --batch_size 256 \
+            --epochs $epochs \
+            --max_length 48 \
+            --m 5 \
+            --k 10 \
+            --output_dir out/bert_student \
+            --remove_dropout_layers
+        done
+    done
+done

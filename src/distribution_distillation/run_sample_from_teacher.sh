@@ -18,6 +18,6 @@ pip install --upgrade pip
 
 pip install -r slurm_requirements.txt
 
-python3.8 src/distribution_distillation/sample_from_teacher.py --input_data_dir out/bert_teacher_gridsearch/data \
+python3.8 src/distribution_distillation/sample_from_teacher.py --input_data_dir out/bert_teacher/data \
 --teacher_model_save_dir out/bert_teacher/final_hd020_ad030_cd020/model --output_dir data/distribution_distillation \
 --m 5 --k 10 --seed 42

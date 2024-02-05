@@ -1,5 +1,5 @@
 import numpy as np
-from sklearn.metrics import brier_score_loss, log_loss
+from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 import tensorflow as tf
 
 # y_pred: need class predictions
@@ -47,6 +47,10 @@ def f1_score(y_true, y_pred):
     precision = precision_score(y_true, y_pred)
     recall = recall_score(y_true, y_pred)
     return safe_divide(2 * precision * recall, precision + recall)
+
+
+def auc_score(y_true, y_prob):
+    return roc_auc_score(y_true, y_prob)
 
 
 def nll_score(y_true, y_prob):

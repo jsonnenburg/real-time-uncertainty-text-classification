@@ -20,4 +20,4 @@ pip install -r slurm_requirements.txt
 
 python3.8 src/distribution_distillation/uncertainty_distillation.py --transfer_data_dir data/distribution_distillation \
 --teacher_model_save_dir out/bert_teacher/final_hd020_ad030_cd020/model --version_identifier e2 \
- --learning_rate 0.00002 --batch_size 32 --epochs 2 --max_length 48 --m 5 --k 10 --output_dir out/bert_student
+ --learning_rate 0.00002 --batch_size 256 --epochs 2 --max_length 48 --m 5 --k 10 --output_dir out/bert_student

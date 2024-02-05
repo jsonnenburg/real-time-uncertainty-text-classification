@@ -18,8 +18,8 @@ from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
 from src.training.train_bert_teacher import serialize_metric
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
-from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, nll_score, brier_score,
-                               ece_score, bald_score)
+from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, auc_score, nll_score,
+                               brier_score, ece_score, bald_score)
 from src.utils.training import HistorySaver
 from src.distribution_distillation.predictive_distribution import get_student_predictive_distribution_info, get_teacher_predictive_distribution_info
 
@@ -84,6 +84,7 @@ def compute_student_metrics(model, eval_data):
     prec = precision_score(y_true, y_pred)
     rec = recall_score(y_true, y_pred)
     f1 = f1_score(y_true, y_pred)
+    auc = auc_score(y_true, y_prob)
     nll = nll_score(y_true, y_prob)
     bs = brier_score(y_true, y_prob)
     ece = ece_score(y_true, y_pred, y_prob)
@@ -98,6 +99,7 @@ def compute_student_metrics(model, eval_data):
         "precision_score": serialize_metric(prec),
         "recall_score": serialize_metric(rec),
         "f1_score": serialize_metric(f1),
+        "auc_score": serialize_metric(auc),
         "nll_score": serialize_metric(nll),
         "brier_score": serialize_metric(bs),
         "ece_score": serialize_metric(ece),
@@ -129,12 +131,12 @@ def main(args):
                                                   teacher_config['classifier_dropout'])
 
     # initialize student model
-    student_model = AleatoricMCDropoutBERT(student_model_config, custom_loss_fn=shen_loss(n_samples=args.m*args.k))
+    student_model = AleatoricMCDropoutBERT(student_model_config, custom_loss_fn=shen_loss(n_samples=args.m*args.k, loss_weight=args.shen_loss_weight))
     # compile with shen loss
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.learning_rate)
     student_model.compile(
         optimizer=optimizer,
-        loss={'classifier': shen_loss(n_samples=args.m*args.k), 'log_variance': null_loss},
+        loss={'classifier': shen_loss(n_samples=args.m*args.k, loss_weight=args.shen_loss_weight), 'log_variance': null_loss},
         metrics=[{'classifier': 'binary_crossentropy'}, tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
         run_eagerly=True
     )
@@ -249,6 +251,8 @@ if __name__ == '__main__':
     parser.add_argument('--max_length', type=int, default=48)
     parser.add_argument('--remove_dropout_layers', action='store_true',
                         help="No dropout layers (dropout prob. set to 0), as per Shen et al (2021).")
+    parser.add_argument('--shen_loss_weight', type=float, default=1.0,
+                        help="Weight for custom Shen et al. (2021) loss.")
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()

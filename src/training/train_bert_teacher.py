@@ -17,8 +17,8 @@ from src.utils.logger_config import setup_logging
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess, get_tf_dataset
 
-from src.utils.metrics import (serialize_metric, accuracy_score, precision_score, recall_score, f1_score, nll_score,
-                               brier_score, ece_score, bald_score)
+from src.utils.metrics import (serialize_metric, accuracy_score, precision_score, recall_score, f1_score, auc_score,
+                               nll_score, brier_score, ece_score, bald_score)
 from src.utils.loss_functions import null_loss, bayesian_binary_crossentropy
 from src.utils.data import SimpleDataLoader, Dataset
 from src.utils.training import HistorySaver
@@ -54,6 +54,7 @@ def compute_metrics(model, eval_data):
     prec = precision_score(y_true, y_pred)
     rec = recall_score(y_true, y_pred)
     f1 = f1_score(y_true, y_pred)
+    auc = auc_score(y_true, y_prob)
     nll = nll_score(y_true, y_prob)
     bs = brier_score(y_true, y_prob)
     ece = ece_score(y_true, y_pred, y_prob)
@@ -67,6 +68,7 @@ def compute_metrics(model, eval_data):
         "precision_score": serialize_metric(prec),
         "recall_score": serialize_metric(rec),
         "f1_score": serialize_metric(f1),
+        "auc_score": serialize_metric(auc),
         "nll_score": serialize_metric(nll),
         "brier_score": serialize_metric(bs),
         "ece_score": serialize_metric(ece)
@@ -112,6 +114,7 @@ def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
     prec = precision_score(y_true, y_pred_mcd)
     rec = recall_score(y_true, y_pred_mcd)
     f1 = f1_score(y_true, y_pred_mcd)
+    auc = auc_score(y_true, y_prob_mcd)
     nll = nll_score(y_true, y_prob_mcd)
     bs = brier_score(y_true, y_prob_mcd)
     ece = ece_score(y_true, y_pred_mcd, y_prob_mcd)
@@ -126,6 +129,7 @@ def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
         "precision_score": serialize_metric(prec),
         "recall_score": serialize_metric(rec),
         "f1_score": serialize_metric(f1),
+        "auc_score": serialize_metric(auc),
         "nll_score": serialize_metric(nll),
         "brier_score": serialize_metric(bs),
         "ece_score": serialize_metric(ece),
