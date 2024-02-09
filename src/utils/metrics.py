@@ -2,9 +2,6 @@ import numpy as np
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 import tensorflow as tf
 
-# y_pred: need class predictions
-# y_prob: need probabilities for positive class
-
 
 def serialize_metric(value):
     if np.isscalar(value):
@@ -28,6 +25,10 @@ def safe_divide(numerator, denominator):
 
 
 def accuracy_score(y_true, y_pred):
+    """
+    :param y_true: The true class labels.
+    :param y_pred: The predicted class labels.
+    """
     return np.mean(y_true == y_pred)
 
 
@@ -50,6 +51,10 @@ def f1_score(y_true, y_pred):
 
 
 def auc_score(y_true, y_prob):
+    """
+    :param y_true: The true class labels.
+    :param y_prob: The predicted probabilities of the positive class.
+    """
     return roc_auc_score(y_true, y_prob)
 
 
@@ -70,14 +75,19 @@ def pred_entropy_score(y_probs):
     return entropy
 
 
-def ece_score(y_true, y_pred, y_prob, n_bins=10):
-    # default bin size, following Ovadia et al. (2019)
+def ece_score(y_true, y_pred, y_prob, n_bins=30):
+    """
+    Computes the expected calibration error with a default bin size of 30 and using the L2 norm,
+    as used by Shen et al. (2021).
+    """
     y_true = np.squeeze(y_true)
+
     bin_limits = np.linspace(0, 1, n_bins + 1)
     bin_lowers = bin_limits[:-1]
     bin_uppers = bin_limits[1:]
 
-    ece = 0.0
+    sum_sq_diff = 0.0
+
     for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
         in_bin = np.greater_equal(y_prob, bin_lower) & np.less(y_prob, bin_upper)
         in_bin = in_bin.flatten()
@@ -85,9 +95,11 @@ def ece_score(y_true, y_pred, y_prob, n_bins=10):
         if prop_in_bin > 0:
             accuracy_in_bin = np.mean(y_pred[in_bin] == y_true[in_bin])
             avg_confidence_in_bin = np.mean(y_prob[in_bin])
-            ece += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
+            sum_sq_diff += ((avg_confidence_in_bin - accuracy_in_bin) ** 2) * prop_in_bin
 
-    return ece
+    ece_l2 = np.sqrt(sum_sq_diff)
+
+    return ece_l2
 
 
 def bald_score(y_prob_mc):
