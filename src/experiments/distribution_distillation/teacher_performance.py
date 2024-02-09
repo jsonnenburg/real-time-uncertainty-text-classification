@@ -17,7 +17,7 @@ from src.distribution_distillation.sample_from_teacher import load_data
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
 from src.utils.data import Dataset
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss
-from src.utils.metrics import serialize_metric, f1_score, ece_score, bald_score
+from src.utils.metrics import serialize_metric, f1_score, ece_score, bald_score, auc_score
 
 
 def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
@@ -30,7 +30,6 @@ def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
     start_time = time.time()
     for batch in eval_data:
         features, labels = batch
-
         samples = model.mc_dropout_sample(features, n=n)
         logits = samples['logit_samples']
         probs = samples['prob_samples']
@@ -53,6 +52,7 @@ def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
     y_true = all_labels
 
     f1 = f1_score(y_true, y_pred_mcd)
+    auc = auc_score(y_true, y_prob_mcd)
     ece = ece_score(y_true, y_pred_mcd, y_prob_mcd)
     bald = bald_score(y_prob_samples)
     avg_bald = np.mean(bald)
@@ -60,6 +60,7 @@ def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
     return {
         "average_inference_time": serialize_metric(average_inference_time),
         "f1_score": serialize_metric(f1),
+        "auc_score": serialize_metric(auc),
         "ece_score": serialize_metric(ece),
         "avg_bald": serialize_metric(avg_bald)
     }
@@ -117,7 +118,7 @@ def main(args):
 
     for n_mcd in tqdm(mc_dropout_samples):
         print(f"Computing metrics for {n_mcd} MC dropout samples")
-        result_dict = {'average_inference_time': [], 'f1_score': [], 'ece_score': [], 'avg_bald': []}
+        result_dict = {'average_inference_time': [], 'f1_score': [], 'auc_score': [], 'ece_score': [], 'avg_bald': []}
 
         for _ in range(10):
             trial_results = compute_mc_dropout_metrics(teacher, test_set_preprocessed, n=n_mcd)
@@ -126,12 +127,14 @@ def main(args):
 
         avg_inference_time_mean = np.mean(result_dict['average_inference_time'])
         f1_mean = np.mean(result_dict['f1_score'])
+        auc_mean = np.mean(result_dict['auc_score'])
         ece_mean = np.mean(result_dict['ece_score'])
         avg_bald_mean = np.mean(result_dict['avg_bald'])
 
         results = {
             'average_inference_time': serialize_metric(avg_inference_time_mean),
             'f1_score': serialize_metric(f1_mean),
+            'auc_score': serialize_metric(auc_mean),
             'avg_bald': serialize_metric(avg_bald_mean),
             'ece_score': serialize_metric(ece_mean),
         }

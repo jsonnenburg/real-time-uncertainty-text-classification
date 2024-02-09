@@ -8,7 +8,7 @@ from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
 from src.utils.logger_config import setup_logging
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss
-from src.utils.metrics import bald_score, f1_score, serialize_metric
+from src.utils.metrics import bald_score, f1_score, auc_score, serialize_metric
 from src.utils.robustness_study import RobustnessStudyDataLoader
 
 import argparse
@@ -94,6 +94,7 @@ def bert_teacher_mc_dropout(model, eval_data, n=50) -> dict:
     avg_bald = np.mean(bald)
 
     f1 = f1_score(y_true, y_pred_mcd)
+    auc = auc_score(y_true, y_prob_mcd)
 
     return {
         'y_true': y_true,
@@ -102,6 +103,7 @@ def bert_teacher_mc_dropout(model, eval_data, n=50) -> dict:
         'predictive_variance': var_mcd,
         'avg_bald': avg_bald,
         'f1_score': f1,
+        'auc_score': auc
     }
 
 
@@ -134,6 +136,7 @@ def bert_student_monte_carlo(model, eval_data, n=50):
     avg_bald = np.mean(bald)
 
     f1 = f1_score(y_true, y_pred_mc)
+    auc = auc_score(y_true, y_prob_mc)
 
     results = {
         'y_true': y_true,
@@ -142,6 +145,7 @@ def bert_student_monte_carlo(model, eval_data, n=50):
         'predictive_variance': variances_np,
         'avg_bald': avg_bald,
         'f1_score': f1,
+        'auc_score': auc
        }
 
     return results
@@ -229,20 +233,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--teacher_model_path', type=str)
     parser.add_argument('--student_model_path', type=str)
-    parser.add_argument('--bilstm_model_path', type=str)
-    parser.add_argument('--cnn_model_path', type=str)
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--output_dir', type=str)
     args = parser.parse_args()
 
     log_dir = os.path.join(args.output_dir, 'logs')
     os.makedirs(log_dir, exist_ok=True)
-    log_file_path = os.path.join(log_dir, 'bilstm_train.txt')
+    log_file_path = os.path.join(log_dir, 'robustness_study_log.txt')
     setup_logging(logger, log_file_path)
 
     main(args)
-
-
-
-
-
