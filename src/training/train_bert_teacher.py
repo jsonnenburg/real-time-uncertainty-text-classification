@@ -85,7 +85,6 @@ def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
     start_time = time.time()
     for batch in eval_data:
         features, labels = batch
-
         samples = model.mc_dropout_sample(features, n=n)
         logits = samples['logit_samples']
         probs = samples['prob_samples']
@@ -144,7 +143,7 @@ def generate_file_path(dir_name: str, identifier: str) -> str:
     return subdir_name
 
 
-def setup_config_directories(base_dir: str, config, final_model: bool) -> dict:
+def setup_config_directories(base_dir: str, lr: float, n_epochs: int, config, final_model: bool) -> dict:
     """
     Creates a directory for each model configuration and returns a dictionary with the paths to the results and
     model directories.
@@ -155,7 +154,7 @@ def setup_config_directories(base_dir: str, config, final_model: bool) -> dict:
     :return:
     """
     prefix = 'final' if final_model else 'temp'
-    suffix = f'hd{int(config.hidden_dropout_prob * 100):03d}_ad{int(config.attention_probs_dropout_prob * 100):03d}_cd{int(config.classifier_dropout * 100):03d}'
+    suffix = f'e{int(n_epochs)}_lr{int(lr * 100000)}_hd{int(config.hidden_dropout_prob * 100):03d}_ad{int(config.attention_probs_dropout_prob * 100):03d}_cd{int(config.classifier_dropout * 100):03d}'
     config_dir = os.path.join(base_dir, f'{prefix}_{suffix}')
 
     paths = {
@@ -217,7 +216,7 @@ def train_model(paths: dict, data: dict, config, batch_size: int, learning_rate:
     model.compile(
         optimizer=optimizer,
         loss={'classifier': bayesian_binary_crossentropy(50), 'log_variance': null_loss},
-        metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
+        metrics=[{'classifier': 'binary_crossentropy'}, tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
         run_eagerly=True
     )
 
@@ -275,7 +274,13 @@ def train_model(paths: dict, data: dict, config, batch_size: int, learning_rate:
     return mc_dropout_metrics
 
 
-def run_bert_grid_search(data: dict, hidden_dropout_probs: list, attention_dropout_probs: list, classifier_dropout_probs: list, args) -> Tuple[float, Tuple[float, float, float]]:
+def run_bert_grid_search(data: dict,
+                         lr: list,
+                         n_epochs: list,
+                         hidden_dropout_probs: list,
+                         attention_dropout_probs: list,
+                         classifier_dropout_probs: list,
+                         args) -> Tuple[float, Tuple[float, float, float], float, int]:
     """
     Wrapper function to run a grid search over the dropout probabilities of the teacher BERT model.
 
@@ -287,33 +292,44 @@ def run_bert_grid_search(data: dict, hidden_dropout_probs: list, attention_dropo
     :return: best_f1, best_dropout_combination
     """
     best_dropout_combination = (None, None, None)
+    best_lr = None
+    best_n_epochs = None
     best_f1 = 0
     updated_best_combination = False
-    for hidden_dropout in hidden_dropout_probs:
-        for attention_dropout in attention_dropout_probs:
-            for classifier_dropout in classifier_dropout_probs:
-                current_dropout_combination = (hidden_dropout, attention_dropout, classifier_dropout)
-                try:
-                    logger.info(f"Training intermediate model with dropout combination {current_dropout_combination}.")
-                    config = create_bert_config(hidden_dropout, attention_dropout, classifier_dropout)
-                    paths = setup_config_directories(args.output_dir, config, final_model=False)
-                    eval_metrics = train_model(paths=paths, config=config, data=data, batch_size=args.batch_size,
-                                               learning_rate=args.learning_rate, epochs=args.epochs,
-                                               max_length=args.max_length, save_model=False)
-                    f1 = eval_metrics['f1_score']  # note that eval_results is either eval_results or mc_dropout_results
-                    if f1 > best_f1:
-                        best_f1 = f1
-                        best_dropout_combination = current_dropout_combination
-                        logger.info(f"New best dropout combination: {best_dropout_combination}\n"
-                                    f"New best f1 score: {best_f1:.3f}")
-                        updated_best_combination = True
-                    logger.info(f"Finished current iteration.\n")
-                except Exception as e:
-                    logger.error(f"Error with dropout combination {current_dropout_combination}: {e}.")
-                if not updated_best_combination:
-                    best_dropout_combination = current_dropout_combination
-    logger.info(f'Finished grid-search, best f1 score found at {best_f1:.3f} for combination {best_dropout_combination}.')
-    return best_f1, best_dropout_combination
+    for epochs in n_epochs:
+        for learning_rate in lr:
+            for hidden_dropout in hidden_dropout_probs:
+                for attention_dropout in attention_dropout_probs:
+                    for classifier_dropout in classifier_dropout_probs:
+                        current_dropout_combination = (hidden_dropout, attention_dropout, classifier_dropout)
+                        try:
+                            logger.info(f"Training intermediate model for {epochs} epochs with "
+                                        f"learning rate: {learning_rate} "
+                                        f"and dropout combination: {current_dropout_combination}.")
+                            config = create_bert_config(hidden_dropout, attention_dropout, classifier_dropout)
+                            paths = setup_config_directories(args.output_dir, learning_rate, epochs, config, final_model=False)
+                            eval_metrics = train_model(paths=paths, config=config, data=data, batch_size=args.batch_size,
+                                                       learning_rate=learning_rate, epochs=epochs,
+                                                       max_length=args.max_length, save_model=False)
+                            f1 = eval_metrics['f1_score']  # note that eval_results is either eval_results or mc_dropout_results
+                            if f1 > best_f1:
+                                best_f1 = f1
+                                best_lr = learning_rate
+                                best_n_epochs = epochs
+                                best_dropout_combination = current_dropout_combination
+                                logger.info(f"New best f1 score: {best_f1:.3f} for "
+                                            f"dropout combination: {best_dropout_combination} "
+                                            f"with learning rate of {best_lr} and {best_n_epochs} epochs.")
+                                updated_best_combination = True
+                            logger.info(f"Finished current iteration.\n")
+                        except Exception as e:
+                            logger.error(f"Error for current iteration at epochs {epochs}, LR {learning_rate}, "
+                                         f"and dropout combination {current_dropout_combination}: {e}.")
+                        if not updated_best_combination:
+                            best_dropout_combination = current_dropout_combination
+    logger.info(f'Finished grid-search, best f1 score found at {best_f1:.3f} for combination {best_dropout_combination} '
+                f'with learning rate of {best_lr} and {best_n_epochs} epochs.')
+    return best_f1, best_dropout_combination, best_lr, best_n_epochs
 
 
 ########################################################################################################################
@@ -321,14 +337,16 @@ def run_bert_grid_search(data: dict, hidden_dropout_probs: list, attention_dropo
 
 def infer_final_model_config(base_dir):
     config = None
-    pattern = r'^final_hd(\d{3})_ad(\d{3})_cd(\d{3})$'
+    pattern = r'^final_e(\d{1})_lr(\d{1})_hd(\d{3})_ad(\d{3})_cd(\d{3})$'
 
     for dir_name in os.listdir(base_dir):
         if dir_name.startswith('final'):
             match = re.match(pattern, dir_name)
             if match:
-                hd, ad, cd = match.groups()
+                e, lr, hd, ad, cd = match.groups()
                 config = {
+                    'epochs': int(e),
+                    'learning_rate': int(lr) / 100000,
                     'hidden_dropout_prob': int(hd) / 100.0,
                     'attention_probs_dropout_prob': int(ad) / 100.0,
                     'classifier_dropout': int(cd) / 100.0
@@ -359,18 +377,28 @@ def main(args):
     }
 
     # define dropout probabilities for grid search
-    hidden_dropout_probs = [0.2, 0.3, 0.4]
-    attention_dropout_probs = [0.1, 0.2, 0.3]
-    classifier_dropout_probs = [0.2, 0.3, 0.4]
+    learning_rates = [2e-5, 5e-5, 8e-5]
+    n_epochs = [3]
+    hidden_dropout_probs = [0.2, 0.3]
+    attention_dropout_probs = [0.2, 0.3]
+    classifier_dropout_probs = [0.2, 0.3]
 
     # if subdir with "final" prefix already exists, skip grid search and load best model
     final_model_trained = any([f.startswith("final") for f in os.listdir(args.output_dir)])
     if not final_model_trained:
-        best_f1, best_dropout_combination = run_bert_grid_search(data, hidden_dropout_probs, attention_dropout_probs, classifier_dropout_probs, args)
+        best_f1, best_dropout_combination, best_learning_rate, best_n_epochs = run_bert_grid_search(data=data,
+                                                                                                    lr=learning_rates,
+                                                                                                    n_epochs=n_epochs,
+                                                                                                    hidden_dropout_probs=hidden_dropout_probs,
+                                                                                                    attention_dropout_probs=attention_dropout_probs,
+                                                                                                    classifier_dropout_probs=classifier_dropout_probs,
+                                                                                                    args=args)
     else:
         logger.info("Final model already trained, skipping grid search.")
-        # infer best dropout combination from final model directory
+        # infer the best dropout combination from final model directory
         final_model_config = infer_final_model_config(args.output_dir)
+        best_learning_rate = final_model_config['learning_rate']
+        best_n_epochs = final_model_config['epochs']
         best_dropout_combination = (final_model_config['hidden_dropout_prob'], final_model_config['attention_probs_dropout_prob'], final_model_config['classifier_dropout'])
 
     # Retrain the best model on the combination of train and validation set
@@ -405,10 +433,10 @@ def main(args):
         logger.error("No best dropout combination saved.")
     else:
         best_config = create_bert_config(best_dropout_combination[0], best_dropout_combination[1], best_dropout_combination[2])
-        best_paths = setup_config_directories(args.output_dir, best_config, final_model=True)
+        best_paths = setup_config_directories(args.output_dir, best_learning_rate, best_n_epochs, best_config, final_model=True)
         logger.info("Training final model with best dropout combination.")
         results = train_model(paths=best_paths, config=best_config, data=combined_data, batch_size=args.batch_size,
-                              learning_rate=args.learning_rate, epochs=args.epochs, max_length=args.max_length,
+                              learning_rate=best_learning_rate, epochs=best_n_epochs, max_length=args.max_length,
                               save_model=True)
         if results is not None:
             trained_best_model = True
@@ -424,9 +452,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_data_dir", type=str)
-    parser.add_argument("--learning_rate", type=float, default=2e-5)
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--max_length", type=int, default=48)
     parser.add_argument('--output_dir', type=str, default="out")
     parser.add_argument('--seed', type=int, default=42)
