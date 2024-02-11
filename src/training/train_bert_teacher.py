@@ -377,7 +377,7 @@ def main(args):
     }
 
     # define dropout probabilities for grid search
-    learning_rates = [2e-5, 5e-5, 8e-5]
+    learning_rates = [2e-5, 3e-5, 5e-5]
     n_epochs = [3]
     hidden_dropout_probs = [0.2, 0.3]
     attention_dropout_probs = [0.2, 0.3]

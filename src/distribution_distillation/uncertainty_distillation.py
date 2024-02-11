@@ -28,6 +28,21 @@ import tensorflow as tf
 logger = logging.getLogger()
 
 
+def delete_all_but_latest_checkpoint(model_dir):
+    """
+    Delete all but the latest checkpoint file in the model directory.
+
+    :param model_dir: The directory containing the model checkpoint files.
+    """
+    checkpoint_files = [f for f in os.listdir(model_dir) if f.startswith("cp-") and f.endswith(".ckpt.index")]
+    epoch_numbers = [int(f.split('-')[1].split('.')[0]) for f in checkpoint_files]
+    last_epoch_num = max(epoch_numbers)
+    last_epoch_prefix = f"cp-{last_epoch_num:02d}"
+    for f in os.listdir(model_dir):
+        if f.startswith("cp-") and not f.startswith(last_epoch_prefix):
+            os.remove(os.path.join(model_dir, f))
+
+
 def get_predictions(model, eval_data):
     total_logits = []
     total_log_variances = []
@@ -231,6 +246,8 @@ def main(args):
 
     f1 = results['f1_score']
     logger.info(f"Final f1 score of distilled student model: {f1:.3f}")
+
+    delete_all_but_latest_checkpoint(model_dir)
 
 
 if __name__ == '__main__':

@@ -75,7 +75,7 @@ def epistemic_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
     return transfer_df
 
 
-def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int = 5, k: int = 10, seed_list: list = None) -> pd.DataFrame:
+def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int = 5, k: int = 10) -> pd.DataFrame:
     """
     Perform Monte Carlo Dropout Transfer Sampling on a given model and dataset.
 
