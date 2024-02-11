@@ -2,9 +2,9 @@
 #SBATCH --job-name=rtuq-robustness-study
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:a10080gb:3
-#SBATCH --mem=32G
+#SBATCH --mem=70G
 #SBATCH --output=test-robustness-study_%j.out
-#SBATCH --time=30:00:00
+#SBATCH --time=04:00:00
 
 module load python/3.8
 module load cuda/11.3
