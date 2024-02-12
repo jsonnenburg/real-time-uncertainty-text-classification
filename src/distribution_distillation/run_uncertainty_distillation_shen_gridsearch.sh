@@ -18,7 +18,7 @@ pip install --upgrade pip
 pip install -r slurm_requirements.txt
 
 shen_loss_weights=(0.5 1 2)
-learning_rates=(0.0002 0.00002, 0.000002)
+learning_rates=(0.0002 0.00002 0.000002)
 epochs_list=(2 3 4)
 
 for shen_loss_weight in "${shen_loss_weights[@]}"; do

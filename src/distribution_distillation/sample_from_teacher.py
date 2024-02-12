@@ -30,7 +30,7 @@ from src.utils.loss_functions import null_loss, bayesian_binary_crossentropy
 # 		3. additionally generate *k* random samples from $N(0,I)$ for each predictive sample t = 1,...,m to learn aleatoric uncertainty
 # 	- authors use m=5 and k=10
 
-def epistemic_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int = 5, seed_list: list = None) -> pd.DataFrame:
+def epistemic_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int = 5) -> pd.DataFrame:
     """
     Perform Monte Carlo dropout transfer sampling on a given model and dataset.
     Generates an augmented dataset with additional uncertain labels created by MC dropout.
@@ -38,7 +38,6 @@ def epistemic_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
     :param  model: The TensorFlow model to use for sampling.
     :param  data: Data to be used for sampling. Each element should be a tuple (features, labels).
     :param  m: Number of MC dropout iterations.
-    :param seed_list: List of seeds for reproducibility.
     :return: df: Augmented dataset with original features, labels, and uncertain labels.
     """
     augmented_data = {
@@ -86,7 +85,6 @@ def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
     :param  data: Data to be used for sampling. Each element should be a tuple (features, labels).
     :param  m: Number of MC Dropout iterations.
     :param k: Number of aleatoric uncertainty samples per MC iteration.
-    :param seed_list: List of seeds for reproducibility.
     :return: df: Augmented dataset with original features, labels, and uncertain labels.
     """
     augmented_data = {
@@ -137,7 +135,7 @@ def aleatoric_mc_dropout_transfer_sampling(model, data: tf.data.Dataset, m: int 
     return transfer_df
 
 
-def load_data(dataset_dir:str, subset: str) -> pd.DataFrame:
+def load_data(dataset_dir: str, subset: str) -> pd.DataFrame:
     subset_file = os.path.join(dataset_dir, f'{subset}.csv')
     df = pd.read_csv(subset_file, sep='\t', index_col=0)
     return df
@@ -188,7 +186,7 @@ def main(args):
         teacher.load_weights(latest_checkpoint).expect_partial()
 
     teacher.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=teacher_config.learning_rate),
+            optimizer=tf.keras.optimizers.Adam(learning_rate=teacher_config['learning_rate']),
             loss={'classifier': bayesian_binary_crossentropy, 'log_variance': null_loss},
             metrics=[tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
             run_eagerly=True
