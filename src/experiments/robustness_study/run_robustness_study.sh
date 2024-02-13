@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:a10080gb:3
 #SBATCH --mem=70G
 #SBATCH --output=test-robustness-study_%j.out
-#SBATCH --time=04:00:00
+#SBATCH --time=06:00:00
 
 module load python/3.8
 module load cuda/11.3
@@ -18,6 +18,6 @@ pip install --upgrade pip
 
 pip install -r slurm_requirements.txt
 
-python3.8 src/experiments/robustness_study/robustness_study.py --teacher_model_path out/bert_teacher/final_hd020_ad030_cd020/model \
---student_model_path out/bert_student/m5_k10/e2/model --data_dir data/robustness_study/preprocessed_noisy \
+python3.8 src/experiments/robustness_study/robustness_study.py --teacher_model_path out/bert_teacher/final_e3_lr2_hd020_ad020_cd030/model \
+--student_model_path out/bert_student/m5_k10/shen_2_lr0/model --data_dir data/robustness_study/preprocessed_noisy \
 --output_dir out/robustness_study

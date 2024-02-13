@@ -8,7 +8,8 @@ from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
 from src.utils.logger_config import setup_logging
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss
-from src.utils.metrics import bald_score, f1_score, auc_score, serialize_metric
+from src.utils.metrics import bald_score, f1_score, auc_score, serialize_metric, accuracy_score, precision_score, \
+    recall_score, nll_score, brier_score, ece_score
 from src.utils.robustness_study import RobustnessStudyDataLoader
 
 import argparse
@@ -32,7 +33,7 @@ def load_bert_model(model_path):
 
     model = AleatoricMCDropoutBERT(config=config, custom_loss_fn=bayesian_binary_crossentropy(50))
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=2e-5)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=model_config.learning_rate)
     model.compile(
         optimizer=optimizer,
         loss={'classifier': bayesian_binary_crossentropy(50), 'log_variance': null_loss},
@@ -46,7 +47,7 @@ def load_bert_model(model_path):
     return model
 
 
-def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 2048):
+def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 256):
     input_ids, attention_masks, labels = bert_preprocess(data, max_length=max_length)
     data_tf = tf.data.Dataset.from_tensor_slices((
         {
@@ -90,20 +91,30 @@ def bert_teacher_mc_dropout(model, eval_data, n=50) -> dict:
 
     var_mcd = tf.exp(total_mean_log_variances).numpy().reshape(all_labels.shape)
 
-    bald = bald_score(y_prob_samples)
-    avg_bald = np.mean(bald)
-
+    acc = accuracy_score(y_true, y_pred_mcd)
+    prec = precision_score(y_true, y_pred_mcd)
+    rec = recall_score(y_true, y_pred_mcd)
     f1 = f1_score(y_true, y_pred_mcd)
     auc = auc_score(y_true, y_prob_mcd)
+    nll = nll_score(y_true, y_prob_mcd)
+    bs = brier_score(y_true, y_prob_mcd)
+    ece = ece_score(y_true, y_pred_mcd, y_prob_mcd)
+    bald = bald_score(y_prob_samples)
 
     return {
         'y_true': y_true,
         'y_pred': y_pred_mcd,
         'y_prob': y_prob_mcd,
         'predictive_variance': var_mcd,
-        'avg_bald': avg_bald,
+        'accuracy': acc,
+        'precision': prec,
+        'recall': rec,
         'f1_score': f1,
-        'auc_score': auc
+        'auc_score': auc,
+        'nll_score': nll,
+        'brier_score': bs,
+        'ece_score': ece,
+        'bald': bald,
     }
 
 
@@ -128,27 +139,36 @@ def bert_student_monte_carlo(model, eval_data, n=50):
 
     y_prob_mc = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
     y_pred_mc = y_prob_mc.round(0).astype(int)
-    variances_np = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
+    var_mc = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
     y_true = all_labels
 
     total_prob_samples_np = np.array(total_prob_samples)
-    bald = bald_score(total_prob_samples_np)
-    avg_bald = np.mean(bald)
 
+    acc = accuracy_score(y_true, y_pred_mc)
+    prec = precision_score(y_true, y_pred_mc)
+    rec = recall_score(y_true, y_pred_mc)
     f1 = f1_score(y_true, y_pred_mc)
     auc = auc_score(y_true, y_prob_mc)
+    nll = nll_score(y_true, y_prob_mc)
+    bs = brier_score(y_true, y_prob_mc)
+    ece = ece_score(y_true, y_pred_mc, y_prob_mc)
+    bald = bald_score(total_prob_samples_np)
 
-    results = {
+    return {
         'y_true': y_true,
         'y_pred': y_pred_mc,
         'y_prob': y_prob_mc,
-        'predictive_variance': variances_np,
-        'avg_bald': avg_bald,
+        'predictive_variance': var_mc,
+        'accuracy': acc,
+        'precision': prec,
+        'recall': rec,
         'f1_score': f1,
-        'auc_score': auc
-       }
-
-    return results
+        'auc_score': auc,
+        'nll_score': nll,
+        'brier_score': bs,
+        'ece_score': ece,
+        'bald': bald,
+    }
 
 
 def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
@@ -167,8 +187,19 @@ def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
             outputs = bert_teacher_mc_dropout(model, data_tf, n=50)
 
             results[typ][level] = {
-                'f1_score': serialize_metric(outputs['f1_score']),
-                'avg_bald': serialize_metric(outputs['avg_bald']),
+                "y_true": outputs['y_true'].tolist(),
+                "y_pred": outputs['y_pred'].tolist(),
+                "y_prob": outputs['y_prob'].tolist(),
+                "predictive_variance": outputs['predictive_variance'].tolist(),
+                "accuracy": serialize_metric(outputs['accuracy']),
+                "precision": serialize_metric(outputs['precision']),
+                "recall": serialize_metric(outputs['recall']),
+                "f1_score": serialize_metric(outputs['f1_score']),
+                "auc_score": serialize_metric(outputs['auc_score']),
+                "nll_score": serialize_metric(outputs['nll_score']),
+                "brier_score": serialize_metric(outputs['brier_score']),
+                "ece_score": serialize_metric(outputs['ece_score']),
+                "bald_score": serialize_metric(outputs['bald']),
             }
             logger.info(f"Successfully computed results for {typ} - {level}")
 
@@ -192,8 +223,19 @@ def perform_experiment_bert_student(model, preprocessed_data, n_trials):
             outputs = bert_student_monte_carlo(model, data_tf, n=50)
 
             results[typ][level] = {
-                'f1_score': serialize_metric(outputs['f1_score']),
-                'avg_bald': serialize_metric(outputs['avg_bald']),
+                "y_true": outputs['y_true'].tolist(),
+                "y_pred": outputs['y_pred'].tolist(),
+                "y_prob": outputs['y_prob'].tolist(),
+                "predictive_variance": outputs['predictive_variance'].tolist(),
+                "accuracy": serialize_metric(outputs['accuracy']),
+                "precision": serialize_metric(outputs['precision']),
+                "recall": serialize_metric(outputs['recall']),
+                "f1_score": serialize_metric(outputs['f1_score']),
+                "auc_score": serialize_metric(outputs['auc_score']),
+                "nll_score": serialize_metric(outputs['nll_score']),
+                "brier_score": serialize_metric(outputs['brier_score']),
+                "ece_score": serialize_metric(outputs['ece_score']),
+                "bald_score": serialize_metric(outputs['bald']),
             }
             logger.info(f"Successfully computed results for {typ} - {level}")
 

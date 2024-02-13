@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem=32G
 #SBATCH --output=train-bert-student_%j.out
-#SBATCH --time=60:00:00
+#SBATCH --time=02:00:00
 
 module load python/3.8
 module load cuda/11.3
@@ -19,6 +19,6 @@ pip install --upgrade pip
 pip install -r slurm_requirements.txt
 
 python3.8 src/distribution_distillation/uncertainty_distillation.py --transfer_data_dir data/distribution_distillation \
---teacher_model_save_dir out/bert_teacher/final_hd030_ad020_cd035/model --version_identifier shen_e2_dropout010_weight050 \
---save_predictive_distributions --learning_rate 0.000002 --batch_size 32 --epochs 2 --max_length 48 \
---output_dir out/bert_student --m 5 --k 5 --n 50 --remove_dropout_layers --final_layer_dropout_rate 0.10 --seed 42
+--teacher_model_save_dir out/bert_teacher/final_hd020_ad030_cd020/model --version_identifier shen_e10_lr00002 \
+--learning_rate 0.0002 --batch_size 256 --epochs 10 --max_length 48 --m 5 --k 10 --output_dir out/bert_student \
+--remove_dropout_layers
