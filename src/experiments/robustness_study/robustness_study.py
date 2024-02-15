@@ -178,69 +178,71 @@ def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
             results[typ] = {}
         for level in preprocessed_data[typ]:
             logger.info(f"Computing results for {typ} - {level}")
-            if level not in results[typ]:
-                results[typ][level] = {}
-            logger.info(f"Preprocessing data...")
             data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
+            init_results_storage(results, typ, level)
 
-            logger.info(f"Performing MC dropout...")
-            outputs = bert_teacher_mc_dropout(model, data_tf, n=50)
+            for i in range(n_trials):
+                trial_results = bert_teacher_mc_dropout(model, data_tf, n=50)
+                update_trial_results(results, typ, level, trial_results, i)
 
-            results[typ][level] = {
-                "y_true": outputs['y_true'].tolist(),
-                "y_pred": outputs['y_pred'].tolist(),
-                "y_prob": outputs['y_prob'].tolist(),
-                "predictive_variance": outputs['predictive_variance'].tolist(),
-                "accuracy": serialize_metric(outputs['accuracy']),
-                "precision": serialize_metric(outputs['precision']),
-                "recall": serialize_metric(outputs['recall']),
-                "f1_score": serialize_metric(outputs['f1_score']),
-                "auc_score": serialize_metric(outputs['auc_score']),
-                "nll_score": serialize_metric(outputs['nll_score']),
-                "brier_score": serialize_metric(outputs['brier_score']),
-                "ece_score": serialize_metric(outputs['ece_score']),
-                "bald_score": serialize_metric(outputs['bald']),
-            }
+            finalize_results(results, typ, level)
             logger.info(f"Successfully computed results for {typ} - {level}")
 
-    logger.info("Finished all experiments")
+    logger.info("Finished experiment for teacher model.")
     return results
 
 
 def perform_experiment_bert_student(model, preprocessed_data, n_trials):
     results = {}
     for typ in preprocessed_data:
-        if typ not in results:
-            results[typ] = {}
+        results[typ] = {}
         for level in preprocessed_data[typ]:
             logger.info(f"Computing results for {typ} - {level}")
-            if level not in results[typ]:
-                results[typ][level] = {}
-            logger.info(f"Preprocessing data...")
             data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
+            init_results_storage(results, typ, level)
 
-            logger.info(f"Performing MC sampling...")
-            outputs = bert_student_monte_carlo(model, data_tf, n=50)
+            for i in range(n_trials):
+                trial_results = bert_student_monte_carlo(model, data_tf, n=50)
+                update_trial_results(results, typ, level, trial_results, i)
 
-            results[typ][level] = {
-                "y_true": outputs['y_true'].tolist(),
-                "y_pred": outputs['y_pred'].tolist(),
-                "y_prob": outputs['y_prob'].tolist(),
-                "predictive_variance": outputs['predictive_variance'].tolist(),
-                "accuracy": serialize_metric(outputs['accuracy']),
-                "precision": serialize_metric(outputs['precision']),
-                "recall": serialize_metric(outputs['recall']),
-                "f1_score": serialize_metric(outputs['f1_score']),
-                "auc_score": serialize_metric(outputs['auc_score']),
-                "nll_score": serialize_metric(outputs['nll_score']),
-                "brier_score": serialize_metric(outputs['brier_score']),
-                "ece_score": serialize_metric(outputs['ece_score']),
-                "bald_score": serialize_metric(outputs['bald']),
-            }
+            finalize_results(results, typ, level)
             logger.info(f"Successfully computed results for {typ} - {level}")
 
-    logger.info("Finished all experiments")
+    logger.info("Finished experiment for student model.")
     return results
+
+
+def init_results_storage(results, typ, level):
+    scalar_metrics = ['accuracy', 'precision', 'recall', 'f1_score', 'auc_score', 'nll_score', 'brier_score', 'ece_score']
+    per_input_metrics = ['y_true', 'y_pred', 'y_prob', 'predictive_variance', 'bald']
+    for metric in scalar_metrics + per_input_metrics:
+        results[typ][level][metric] = []
+
+
+def update_trial_results(results, typ, level, trial_results, trial_index):
+    if trial_index == 0:
+        # For y_true, only store once as it doesn't change across trials
+        results[typ][level]['y_true'] = trial_results['y_true']
+    # Update scalar metrics
+    for metric in ['accuracy', 'precision', 'recall', 'f1_score', 'auc_score', 'nll_score', 'brier_score', 'ece_score']:
+        results[typ][level][metric].append(trial_results[metric])
+    # Update per-input metrics, except y_true
+    for metric in ['y_prob', 'predictive_variance', 'bald']:
+        if trial_index == 0:
+            results[typ][level][metric] = [trial_results[metric]]
+        else:
+            results[typ][level][metric].append(trial_results[metric])
+
+
+def finalize_results(results, typ, level):
+    # Average scalar metrics
+    for metric in ['accuracy', 'precision', 'recall', 'f1_score', 'auc_score', 'nll_score', 'brier_score', 'ece_score']:
+        results[typ][level][metric] = np.mean(results[typ][level][metric], axis=0)
+    # Handle per-input metrics
+    for metric in ['y_prob', 'predictive_variance', 'bald']:
+        averaged_metric = np.mean(np.array(results[typ][level][metric]), axis=0)
+        results[typ][level][metric] = averaged_metric.tolist()
+        results[typ][level]['y_pred'] = np.mean(np.array(results[typ][level]['y_prob']), axis=0).round(0).astype(int).tolist()
 
 
 def main(args):
