@@ -33,7 +33,7 @@ def load_bert_model(model_path):
 
     model = AleatoricMCDropoutBERT(config=config, custom_loss_fn=bayesian_binary_crossentropy(50))
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=model_config.learning_rate)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=model_config['learning_rate'])
     model.compile(
         optimizer=optimizer,
         loss={'classifier': bayesian_binary_crossentropy(50), 'log_variance': null_loss},
