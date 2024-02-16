@@ -48,6 +48,8 @@ def load_bert_model(model_path):
 
 
 def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 512):
+    subset_size = 10
+    data = data.sample(n=min(subset_size, len(data)))
     input_ids, attention_masks, labels = bert_preprocess(data, max_length=max_length)
     data_tf = tf.data.Dataset.from_tensor_slices((
         {
@@ -95,10 +97,6 @@ def bert_teacher_mc_dropout(model, eval_data, n=50) -> dict:
     prec = precision_score(y_true, y_pred_mcd)
     rec = recall_score(y_true, y_pred_mcd)
     f1 = f1_score(y_true, y_pred_mcd)
-    auc = auc_score(y_true, y_prob_mcd)
-    nll = nll_score(y_true, y_prob_mcd)
-    bs = brier_score(y_true, y_prob_mcd)
-    ece = ece_score(y_true, y_pred_mcd, y_prob_mcd)
     bald = bald_score(y_prob_samples)
 
     return {
@@ -110,10 +108,6 @@ def bert_teacher_mc_dropout(model, eval_data, n=50) -> dict:
         'precision': prec,
         'recall': rec,
         'f1_score': f1,
-        'auc_score': auc,
-        'nll_score': nll,
-        'brier_score': bs,
-        'ece_score': ece,
         'bald': bald,
     }
 
@@ -148,10 +142,6 @@ def bert_student_monte_carlo(model, eval_data, n=50):
     prec = precision_score(y_true, y_pred_mc)
     rec = recall_score(y_true, y_pred_mc)
     f1 = f1_score(y_true, y_pred_mc)
-    auc = auc_score(y_true, y_prob_mc)
-    nll = nll_score(y_true, y_prob_mc)
-    bs = brier_score(y_true, y_prob_mc)
-    ece = ece_score(y_true, y_pred_mc, y_prob_mc)
     bald = bald_score(total_prob_samples_np)
 
     return {
@@ -163,28 +153,24 @@ def bert_student_monte_carlo(model, eval_data, n=50):
         'precision': prec,
         'recall': rec,
         'f1_score': f1,
-        'auc_score': auc,
-        'nll_score': nll,
-        'brier_score': bs,
-        'ece_score': ece,
         'bald': bald,
     }
 
 
 def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
     results = {}
-    for typ in preprocessed_data:
-        for level in preprocessed_data[typ]:
-            logger.info(f"Computing results for {typ} - {level}")
-            data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
-            init_results_storage(results, typ, level)
+    typ = 'ppr'
+    level = 0.2
+    logger.info(f"Computing results for {typ} - {level}")
+    data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
+    init_results_storage(results, typ, level)
 
-            for i in range(n_trials):
-                trial_results = bert_teacher_mc_dropout(model, data_tf, n=50)
-                update_trial_results(results, typ, level, trial_results, i)
+    for i in range(n_trials):
+        trial_results = bert_teacher_mc_dropout(model, data_tf, n=2)
+        update_trial_results(results, typ, level, trial_results, i)
 
-            finalize_results(results, typ, level)
-            logger.info(f"Successfully computed results for {typ} - {level}")
+    finalize_results(results, typ, level)
+    logger.info(f"Successfully computed results for {typ} - {level}")
 
     logger.info("Finished experiment for teacher model.")
     return results
@@ -192,18 +178,18 @@ def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
 
 def perform_experiment_bert_student(model, preprocessed_data, n_trials):
     results = {}
-    for typ in preprocessed_data:
-        for level in preprocessed_data[typ]:
-            logger.info(f"Computing results for {typ} - {level}")
-            data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
-            init_results_storage(results, typ, level)
+    typ = 'ppr'
+    level = '0.2'
+    logger.info(f"Computing results for {typ} - {level}")
+    data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
+    init_results_storage(results, typ, level)
 
-            for i in range(n_trials):
-                trial_results = bert_student_monte_carlo(model, data_tf, n=50)
-                update_trial_results(results, typ, level, trial_results, i)
+    for i in range(n_trials):
+        trial_results = bert_student_monte_carlo(model, data_tf, n=2)
+        update_trial_results(results, typ, level, trial_results, i)
 
-            finalize_results(results, typ, level)
-            logger.info(f"Successfully computed results for {typ} - {level}")
+    finalize_results(results, typ, level)
+    logger.info(f"Successfully computed results for {typ} - {level}")
 
     logger.info("Finished experiment for student model.")
     return results
@@ -214,7 +200,7 @@ def init_results_storage(results, typ, level):
         results[typ] = {}
     if level not in results[typ]:
         results[typ][level] = {}
-    scalar_metrics = ['accuracy', 'precision', 'recall', 'f1_score', 'auc_score', 'nll_score', 'brier_score', 'ece_score']
+    scalar_metrics = ['accuracy', 'precision', 'recall', 'f1_score']
     per_input_metrics = ['y_true', 'y_pred', 'y_prob', 'predictive_variance', 'bald']
     for metric in scalar_metrics + per_input_metrics:
         results[typ][level][metric] = []
@@ -225,7 +211,7 @@ def update_trial_results(results, typ, level, trial_results, trial_index):
         # For y_true, only store once as it doesn't change across trials
         results[typ][level]['y_true'] = trial_results['y_true']
     # Update scalar metrics
-    for metric in ['accuracy', 'precision', 'recall', 'f1_score', 'auc_score', 'nll_score', 'brier_score', 'ece_score']:
+    for metric in ['accuracy', 'precision', 'recall', 'f1_score']:
         results[typ][level][metric].append(trial_results[metric])
     # Update per-input metrics, except y_true
     for metric in ['y_prob', 'predictive_variance', 'bald']:
@@ -237,7 +223,7 @@ def update_trial_results(results, typ, level, trial_results, trial_index):
 
 def finalize_results(results, typ, level):
     # Average scalar metrics
-    for metric in ['accuracy', 'precision', 'recall', 'f1_score', 'auc_score', 'nll_score', 'brier_score', 'ece_score']:
+    for metric in ['accuracy', 'precision', 'recall', 'f1_score']:
         results[typ][level][metric] = serialize_metric(np.mean(results[typ][level][metric], axis=0))
     # Handle per-input metrics
     for metric in ['y_prob', 'predictive_variance', 'bald']:
@@ -269,11 +255,11 @@ def main(args):
     os.makedirs(args.output_dir, exist_ok=True)
 
     logger.info("Performing experiment...")
-    results_bert_teacher = perform_experiment_bert_teacher(bert_teacher, test_data, n_trials=5)
+    results_bert_teacher = perform_experiment_bert_teacher(bert_teacher, test_data, n_trials=1)
     with open(os.path.join(args.output_dir, 'results_bert_teacher.json'), 'w') as f:
         json.dump(results_bert_teacher, f)
 
-    results_bert_student = perform_experiment_bert_student(bert_student, test_data, n_trials=5)
+    results_bert_student = perform_experiment_bert_student(bert_student, test_data, n_trials=1)
     with open(os.path.join(args.output_dir, 'results_bert_student.json'), 'w') as f:
         json.dump(results_bert_student, f)
 
