@@ -15,7 +15,7 @@ from src.utils.logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset, \
     bert_preprocess, get_tf_dataset
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
-from src.training.train_bert_teacher import serialize_metric
+from src.training.train_bert_teacher import json_serialize
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
 from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, auc_score, nll_score,
@@ -109,15 +109,15 @@ def compute_student_metrics(model, eval_data):
         "y_pred": y_pred.tolist(),
         "y_prob": y_prob.tolist(),
         "predictive_variance": predictive_variance.tolist(),
-        "average_inference_time": serialize_metric(average_inference_time),
-        "accuracy_score": serialize_metric(acc),
-        "precision_score": serialize_metric(prec),
-        "recall_score": serialize_metric(rec),
-        "f1_score": serialize_metric(f1),
-        "auc_score": serialize_metric(auc),
-        "nll_score": serialize_metric(nll),
-        "brier_score": serialize_metric(bs),
-        "ece_score": serialize_metric(ece),
+        "average_inference_time": json_serialize(average_inference_time),
+        "accuracy_score": json_serialize(acc),
+        "precision_score": json_serialize(prec),
+        "recall_score": json_serialize(rec),
+        "f1_score": json_serialize(f1),
+        "auc_score": json_serialize(auc),
+        "nll_score": json_serialize(nll),
+        "brier_score": json_serialize(bs),
+        "ece_score": json_serialize(ece),
         "bald_score": bald.tolist()
     }
 

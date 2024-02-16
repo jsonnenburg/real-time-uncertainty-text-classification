@@ -3,7 +3,7 @@ from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 import tensorflow as tf
 
 
-def serialize_metric(value):
+def json_serialize(value):
     if np.isscalar(value):
         if np.isnan(value):
             return 'NaN'
@@ -15,6 +15,8 @@ def serialize_metric(value):
             return value
     elif isinstance(value, np.ndarray):
         return value.tolist()
+    elif isinstance(value, list):
+        return value
 
 
 def safe_divide(numerator, denominator):

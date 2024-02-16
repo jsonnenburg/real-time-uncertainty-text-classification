@@ -17,7 +17,7 @@ from src.distribution_distillation.sample_from_teacher import load_data
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
 from src.utils.data import Dataset
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss
-from src.utils.metrics import serialize_metric, f1_score, ece_score, bald_score, auc_score
+from src.utils.metrics import json_serialize, f1_score, ece_score, bald_score, auc_score
 
 
 def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
@@ -58,11 +58,11 @@ def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
     avg_bald = np.mean(bald)
 
     return {
-        "average_inference_time": serialize_metric(average_inference_time),
-        "f1_score": serialize_metric(f1),
-        "auc_score": serialize_metric(auc),
-        "ece_score": serialize_metric(ece),
-        "avg_bald": serialize_metric(avg_bald)
+        "average_inference_time": json_serialize(average_inference_time),
+        "f1_score": json_serialize(f1),
+        "auc_score": json_serialize(auc),
+        "ece_score": json_serialize(ece),
+        "avg_bald": json_serialize(avg_bald)
     }
 
 
@@ -132,11 +132,11 @@ def main(args):
         avg_bald_mean = np.mean(result_dict['avg_bald'])
 
         results = {
-            'average_inference_time': serialize_metric(avg_inference_time_mean),
-            'f1_score': serialize_metric(f1_mean),
-            'auc_score': serialize_metric(auc_mean),
-            'avg_bald': serialize_metric(avg_bald_mean),
-            'ece_score': serialize_metric(ece_mean),
+            'average_inference_time': json_serialize(avg_inference_time_mean),
+            'f1_score': json_serialize(f1_mean),
+            'auc_score': json_serialize(auc_mean),
+            'avg_bald': json_serialize(avg_bald_mean),
+            'ece_score': json_serialize(ece_mean),
         }
 
         with open(os.path.join(result_path, f'results_{n_mcd}.json'), 'w') as f:

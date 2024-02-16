@@ -8,7 +8,7 @@ from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
 from src.utils.logger_config import setup_logging
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss
-from src.utils.metrics import bald_score, f1_score, auc_score, serialize_metric, accuracy_score, precision_score, \
+from src.utils.metrics import bald_score, f1_score, auc_score, json_serialize, accuracy_score, precision_score, \
     recall_score, nll_score, brier_score, ece_score
 from src.utils.robustness_study import RobustnessStudyDataLoader
 
@@ -71,7 +71,6 @@ def bert_teacher_mc_dropout(model, eval_data, n=50) -> dict:
 
     for batch in eval_data:
         features, labels = batch
-
         samples = model.mc_dropout_sample(features, n=n)
         logits = samples['logit_samples']
         probs = samples['prob_samples']
@@ -179,7 +178,7 @@ def perform_experiment_bert_teacher(model, preprocessed_data, n_trials):
 def perform_experiment_bert_student(model, preprocessed_data, n_trials):
     results = {}
     typ = 'ppr'
-    level = '0.2'
+    level = 0.2
     logger.info(f"Computing results for {typ} - {level}")
     data_tf = preprocess_data_bert(preprocessed_data[typ][level][0]['data'])
     init_results_storage(results, typ, level)
@@ -204,16 +203,16 @@ def init_results_storage(results, typ, level):
     per_input_metrics = ['y_true', 'y_pred', 'y_prob', 'predictive_variance', 'bald']
     for metric in scalar_metrics + per_input_metrics:
         results[typ][level][metric] = []
+        if metric not in ['y_true', 'y_pred', 'y_prob']:
+            results[typ][level][metric + '_std'] = []
 
 
 def update_trial_results(results, typ, level, trial_results, trial_index):
     if trial_index == 0:
-        # For y_true, only store once as it doesn't change across trials
+        # y_true is the same for all trials
         results[typ][level]['y_true'] = trial_results['y_true']
-    # Update scalar metrics
     for metric in ['accuracy', 'precision', 'recall', 'f1_score']:
         results[typ][level][metric].append(trial_results[metric])
-    # Update per-input metrics, except y_true
     for metric in ['y_prob', 'predictive_variance', 'bald']:
         if trial_index == 0:
             results[typ][level][metric] = [trial_results[metric]]
@@ -224,18 +223,18 @@ def update_trial_results(results, typ, level, trial_results, trial_index):
 def finalize_results(results, typ, level):
     # Average scalar metrics
     for metric in ['accuracy', 'precision', 'recall', 'f1_score']:
-        results[typ][level][metric] = serialize_metric(np.mean(results[typ][level][metric], axis=0))
+        results[typ][level][metric + '_std'] = json_serialize(np.std(results[typ][level][metric], axis=0))
+        results[typ][level][metric] = json_serialize(np.mean(results[typ][level][metric], axis=0))
     # Handle per-input metrics
-    for metric in ['y_prob', 'predictive_variance', 'bald']:
-        averaged_metric = np.mean(np.array(results[typ][level][metric]), axis=0)
-        results[typ][level][metric] = averaged_metric
-        results[typ][level]['y_pred'] = np.array(results[typ][level]['y_prob']).round(0).astype(int)
+    for metric in ['predictive_variance', 'bald']:
+        results[typ][level][metric + '_std'] = np.std(np.array(results[typ][level][metric]), axis=0)
+        results[typ][level][metric] = np.mean(np.array(results[typ][level][metric]), axis=0)
+    results[typ][level]['y_prob'] = np.mean(results[typ][level]['y_prob'], axis=0)
+    results[typ][level]['y_pred'] = np.array(results[typ][level]['y_prob']).round(0).astype(int)
     for metric in ['y_true', 'y_pred', 'y_prob', 'predictive_variance', 'bald']:
-        metric_data = results[typ][level][metric]
-        if isinstance(metric_data, np.ndarray):
-            results[typ][level][metric] = metric_data.tolist()
-        elif isinstance(metric_data, list) and metric_data and isinstance(metric_data[0], np.ndarray):
-            results[typ][level][metric] = [item.tolist() for item in metric_data]
+        results[typ][level][metric] = json_serialize(results[typ][level][metric])
+        if metric not in ['y_true', 'y_pred', 'y_prob']:
+            results[typ][level][metric + '_std'] = json_serialize(results[typ][level][metric + '_std'])
 
 
 def main(args):
@@ -255,11 +254,13 @@ def main(args):
     os.makedirs(args.output_dir, exist_ok=True)
 
     logger.info("Performing experiment...")
-    results_bert_teacher = perform_experiment_bert_teacher(bert_teacher, test_data, n_trials=1)
+    logger.info("Teacher model: MC dropout sampling")
+    results_bert_teacher = perform_experiment_bert_teacher(bert_teacher, test_data, n_trials=10)
     with open(os.path.join(args.output_dir, 'results_bert_teacher.json'), 'w') as f:
         json.dump(results_bert_teacher, f)
 
-    results_bert_student = perform_experiment_bert_student(bert_student, test_data, n_trials=1)
+    logger.info("\nStudent model: MC sampling from logit space")
+    results_bert_student = perform_experiment_bert_student(bert_student, test_data, n_trials=10)
     with open(os.path.join(args.output_dir, 'results_bert_student.json'), 'w') as f:
         json.dump(results_bert_student, f)
 

@@ -1,10 +1,8 @@
 import numpy as np
 import tensorflow as tf
 
-from src.utils.inference import mc_dropout_predict
 
-
-def get_student_predictive_distribution_info(model, eval_data, n=20, num_samples=500) -> dict:
+def get_student_predictive_distribution_info(model, eval_data, n=50, num_samples=500) -> dict:
     eval_data = eval_data.unbatch().take(num_samples).batch(32)
 
     total_logits = []
@@ -16,7 +14,7 @@ def get_student_predictive_distribution_info(model, eval_data, n=20, num_samples
 
     for batch in eval_data:
         features, labels = batch
-        outputs = model.cached_mc_dropout_predict(features, n=n)
+        outputs = model.mc_dropout_predict(features, n=n)
         logits = outputs['logits']
         mean_predictions = outputs['mean_predictions']
         mean_variances = outputs['mean_variances']
@@ -48,14 +46,14 @@ def get_student_predictive_distribution_info(model, eval_data, n=20, num_samples
             "y_true": labels_np.astype(int).tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
-            "aleatoric_uncertainty": mean_variances_np.tolist(),
+            "predictive_variance": mean_variances_np.tolist(),
             "epistemic_uncertainty": (total_uncertainties_np - mean_variances_np).tolist(),
             "total_uncertainty": total_uncertainties_np.tolist()
         }
 
 
 # for some test sequences, save mc dropout predictive samples (all samples, as well as mean and variance), aleatoric and epistemic uncertainty (epistemic as total uncertainty - aleatoric)
-def get_teacher_predictive_distribution_info(model, eval_data, n=20, num_samples=500) -> dict:
+def get_teacher_predictive_distribution_info(model, eval_data, n=50, num_samples=500) -> dict:
     eval_data = eval_data.unbatch().take(num_samples).batch(32)
 
     total_logits = []
@@ -94,7 +92,7 @@ def get_teacher_predictive_distribution_info(model, eval_data, n=20, num_samples
             "y_true": labels_np.astype(int).tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
-            "aleatoric_uncertainty": mean_variances_np.tolist(),
+            "predictive_variance": mean_variances_np.tolist(),
             "epistemic_uncertainty": (total_uncertainties_np - mean_variances_np).tolist(),
             "total_uncertainty": total_uncertainties_np.tolist()
         }

@@ -8,7 +8,7 @@ import pandas as pd
 from src.utils.logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
-from src.training.train_bert_teacher import serialize_metric
+from src.training.train_bert_teacher import json_serialize
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
 from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, nll_score, brier_score,
@@ -149,14 +149,14 @@ def main(args):
             "y_true": labels_np.astype(int).tolist(),
             "y_pred": mean_class_predictions_np.tolist(),
             "y_prob": mean_prob_predictions_np.tolist(),
-            "accuracy_score": serialize_metric(acc),
-            "precision_score": serialize_metric(prec),
-            "recall_score": serialize_metric(rec),
-            "f1_score": serialize_metric(f1),
-            "nll_score": serialize_metric(nll),
-            "brier_score": serialize_metric(bs),
-            "avg_pred_entropy_score": serialize_metric(avg_entropy),
-            "ece_score": serialize_metric(ece)
+            "accuracy_score": json_serialize(acc),
+            "precision_score": json_serialize(prec),
+            "recall_score": json_serialize(rec),
+            "f1_score": json_serialize(f1),
+            "nll_score": json_serialize(nll),
+            "brier_score": json_serialize(bs),
+            "avg_pred_entropy_score": json_serialize(avg_entropy),
+            "ece_score": json_serialize(ece)
         }
         result_dir = os.path.join(args.output_dir, 'results')
         os.makedirs(result_dir, exist_ok=True)

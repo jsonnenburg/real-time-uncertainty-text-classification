@@ -17,7 +17,7 @@ from src.data.robustness_study.baselines_data_preprocessing import pad_sequences
 from src.utils.data import SimpleDataLoader
 from src.utils.logger_config import setup_logging
 
-from src.utils.metrics import (serialize_metric, accuracy_score, precision_score, recall_score, f1_score, nll_score,
+from src.utils.metrics import (json_serialize, accuracy_score, precision_score, recall_score, f1_score, nll_score,
                                brier_score, ece_score, bald_score)
 
 from src.models.bilstm_model import create_bilstm_config, BiLSTM
@@ -55,14 +55,14 @@ def compute_metrics(model, eval_data) -> dict:
         "y_true": y_true.tolist(),
         "y_pred": y_pred.tolist(),
         "y_prob": y_prob.tolist(),
-        "average_inference_time": serialize_metric(average_inference_time),
-        "accuracy_score": serialize_metric(acc),
-        "precision_score": serialize_metric(prec),
-        "recall_score": serialize_metric(rec),
-        "f1_score": serialize_metric(f1),
-        "nll_score": serialize_metric(nll),
-        "brier_score": serialize_metric(bs),
-        "ece_score": serialize_metric(ece)
+        "average_inference_time": json_serialize(average_inference_time),
+        "accuracy_score": json_serialize(acc),
+        "precision_score": json_serialize(prec),
+        "recall_score": json_serialize(rec),
+        "f1_score": json_serialize(f1),
+        "nll_score": json_serialize(nll),
+        "brier_score": json_serialize(bs),
+        "ece_score": json_serialize(ece)
     }
 
 
@@ -114,14 +114,14 @@ def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
         "y_pred": y_pred_mcd.tolist(),
         "y_prob": y_prob_mcd.tolist(),
         "var_logits": var_logits.tolist(),
-        "average_inference_time": serialize_metric(average_inference_time),
-        "accuracy_score": serialize_metric(acc),
-        "precision_score": serialize_metric(prec),
-        "recall_score": serialize_metric(rec),
-        "f1_score": serialize_metric(f1),
-        "nll_score": serialize_metric(nll),
-        "brier_score": serialize_metric(bs),
-        "ece_score": serialize_metric(ece),
+        "average_inference_time": json_serialize(average_inference_time),
+        "accuracy_score": json_serialize(acc),
+        "precision_score": json_serialize(prec),
+        "recall_score": json_serialize(rec),
+        "f1_score": json_serialize(f1),
+        "nll_score": json_serialize(nll),
+        "brier_score": json_serialize(bs),
+        "ece_score": json_serialize(ece),
         "bald_score": bald.tolist()
     }
 
