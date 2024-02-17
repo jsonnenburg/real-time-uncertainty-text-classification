@@ -46,7 +46,7 @@ def load_bert_model(model_path):
     return model
 
 
-def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 512):
+def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 1024):
     input_ids, attention_masks, labels = bert_preprocess(data, max_length=max_length)
     data_tf = tf.data.Dataset.from_tensor_slices((
         {
@@ -128,7 +128,7 @@ def bert_student_monte_carlo(model, eval_data, n=50):
     for batch in eval_data:
         features, labels = batch
         outputs = model.monte_carlo_sample(features, n=n)
-        total_logits.extend(outputs['logits'])
+        total_logits.extend(outputs['mean_logits'])
         total_log_variances.extend(outputs['log_variances'])
         total_labels.extend(labels.numpy())
         total_prob_samples.extend(outputs['prob_samples'])
@@ -268,12 +268,12 @@ def main(args):
 
     logger.info("Performing experiment...")
     logger.info("Teacher model: MC dropout sampling")
-    results_bert_teacher = perform_experiment_bert_teacher(bert_teacher, test_data, n_trials=10)
+    results_bert_teacher = perform_experiment_bert_teacher(bert_teacher, test_data, n_trials=args.n_trials)
     with open(os.path.join(args.output_dir, 'results_bert_teacher.json'), 'w') as f:
         json.dump(results_bert_teacher, f)
 
     logger.info("\nStudent model: MC sampling from logit space")
-    results_bert_student = perform_experiment_bert_student(bert_student, test_data, n_trials=10)
+    results_bert_student = perform_experiment_bert_student(bert_student, test_data, n_trials=args.n_trials)
     with open(os.path.join(args.output_dir, 'results_bert_student.json'), 'w') as f:
         json.dump(results_bert_student, f)
 
@@ -286,6 +286,9 @@ if __name__ == '__main__':
     parser.add_argument('--student_model_path', type=str)
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--output_dir', type=str)
+    parser.add_argument('--n_trials', type=int, default=20)
+    parser.add_argument('--run_for_teacher', action='store_true')
+    parser.add_argument('--run_for_student', action='store_true')
     args = parser.parse_args()
 
     log_dir = os.path.join(args.output_dir, 'logs')

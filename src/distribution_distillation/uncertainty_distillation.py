@@ -56,7 +56,7 @@ def get_predictions(model, eval_data):
     for batch in eval_data:
         features, labels = batch
         outputs = model.monte_carlo_sample(features, n=50)
-        total_logits.extend(outputs['logits'])
+        total_logits.extend(outputs['mean_logits'])  # the first moment of the Gaussian over the logits estimated via MC sampling
         total_log_variances.extend(outputs['log_variances'])
         total_labels.extend(labels.numpy())
         total_prob_samples.extend(outputs['prob_samples'])
@@ -85,7 +85,6 @@ def get_predictions(model, eval_data):
     
 
 def compute_student_metrics(model, eval_data):
-    
     predictions = get_predictions(model, eval_data)
     
     y_true = predictions['y_true']

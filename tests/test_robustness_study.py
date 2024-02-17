@@ -123,7 +123,7 @@ def bert_student_monte_carlo(model, eval_data, n=50):
     for batch in eval_data:
         features, labels = batch
         outputs = model.monte_carlo_sample(features, n=n)
-        total_logits.extend(outputs['logits'])
+        total_logits.extend(outputs['mean_logits'])
         total_log_variances.extend(outputs['log_variances'])
         total_labels.extend(labels.numpy())
         total_prob_samples.extend(outputs['prob_samples'])

@@ -125,9 +125,8 @@ class AleatoricMCDropoutBERT(tf.keras.Model):
 
         # sample n times from normal(0, std)
         rand_seed = random.randint(0, 2 ** 32 - 1)
-        tf.random.set_seed(rand_seed)
         std_expanded = tf.expand_dims(std, -1)
-        std_samples = tf.random.normal(shape=(tf.shape(logits)[0], n, 1), stddev=std_expanded)  # (batch_size, n, 1)
+        std_samples = tf.random.normal(shape=(tf.shape(logits)[0], n, 1), stddev=std_expanded, seed=rand_seed)  # (batch_size, n, 1)
         # Adjust logits to have shape (batch_size, 1, 1) and then tile to match std_samples shape
         logits_expanded = tf.expand_dims(logits, 1)  # (batch_size, 1, 1)
         logits_tiled = tf.tile(logits_expanded, tf.constant([1, n, 1]))  # (batch_size, n, 1)
