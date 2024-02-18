@@ -267,15 +267,17 @@ def main(args):
     os.makedirs(args.output_dir, exist_ok=True)
 
     logger.info("Performing experiment...")
-    logger.info("Teacher model: MC dropout sampling")
-    results_bert_teacher = perform_experiment_bert_teacher(bert_teacher, test_data, n_trials=args.n_trials)
-    with open(os.path.join(args.output_dir, 'results_bert_teacher.json'), 'w') as f:
-        json.dump(results_bert_teacher, f)
+    if args.run_for_teacher:
+        logger.info("Teacher model: MC dropout sampling")
+        results_bert_teacher = perform_experiment_bert_teacher(bert_teacher, test_data, n_trials=args.n_trials)
+        with open(os.path.join(args.output_dir, 'results_bert_teacher.json'), 'w') as f:
+            json.dump(results_bert_teacher, f)
 
-    logger.info("\nStudent model: MC sampling from logit space")
-    results_bert_student = perform_experiment_bert_student(bert_student, test_data, n_trials=args.n_trials)
-    with open(os.path.join(args.output_dir, 'results_bert_student.json'), 'w') as f:
-        json.dump(results_bert_student, f)
+    if args.run_for_student:
+        logger.info("\nStudent model: MC sampling from logit space")
+        results_bert_student = perform_experiment_bert_student(bert_student, test_data, n_trials=args.n_trials)
+        with open(os.path.join(args.output_dir, 'results_bert_student.json'), 'w') as f:
+            json.dump(results_bert_student, f)
 
     logger.info("Finished experiment")
 
