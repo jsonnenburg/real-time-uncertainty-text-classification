@@ -46,7 +46,7 @@ def load_bert_model(model_path):
     return model
 
 
-def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 1024):
+def preprocess_data_bert(data, max_length: int = 48, batch_size: int = 2048):
     input_ids, attention_masks, labels = bert_preprocess(data, max_length=max_length)
     data_tf = tf.data.Dataset.from_tensor_slices((
         {
