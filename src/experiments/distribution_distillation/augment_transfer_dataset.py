@@ -1,6 +1,6 @@
 import os
 import argparse
-from noise import introduce_noise, WordDistributionByPOSTag
+from src.experiments.robustness_study.noise import introduce_noise, WordDistributionByPOSTag
 from src.utils.processing import parallel_apply
 import pandas as pd
 import logging
@@ -10,13 +10,11 @@ logger = logging.getLogger(__name__)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--input_file_path", required=True, type=str, help="Path to raw test data.")
-ap.add_argument("--output_dir", required=True, type=str, help="Where to save modified test data.")
+ap.add_argument("--output_dir", required=True, type=str, help="Where to save modified data.")
 args = ap.parse_args()
 
 input_file_path = args.input_file_path
 output_dir = args.output_dir
-
-p_values = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
 
 
 def generate_noisy_test_data(input_file, output_dir, p_sr, p_pr, p_ri, p_rs, p_rd):
@@ -37,12 +35,12 @@ def generate_noisy_test_data(input_file, output_dir, p_sr, p_pr, p_ri, p_rs, p_r
     output_file_name = os.path.basename(input_file).split('.')[0] + format_params + '.csv'
 
     if p_pr > 0:
-        word_distribution = WordDistributionByPOSTag(input_data['text'])
+        word_distribution = WordDistributionByPOSTag(input_data['sequences'])
     else:
         word_distribution = None
 
     try:
-        input_data['text'] = parallel_apply(input_data['text'], introduce_noise, word_distribution=word_distribution,
+        input_data['sequences'] = parallel_apply(input_data['sequences'], introduce_noise, word_distribution=word_distribution,
                                             p_sr=p_sr, p_pr=p_pr, p_ri=p_ri, p_rs=p_rs, p_rd=p_rd)
     except Exception as e:
         logger.error("Failed to generate noisy sequences: " + str(e))
@@ -53,17 +51,8 @@ def generate_noisy_test_data(input_file, output_dir, p_sr, p_pr, p_ri, p_rs, p_r
 
 def main():
     logger.info(f"Generating noisy sequences for {input_file_path}.")
-    for p in p_values:
-        generate_noisy_test_data(input_file_path, output_dir, p_sr=p, p_pr=0, p_ri=0,
-                                 p_rs=0, p_rd=0)
-        generate_noisy_test_data(input_file_path, output_dir, p_sr=0, p_pr=p, p_ri=0,
-                                 p_rs=0, p_rd=0)
-        generate_noisy_test_data(input_file_path, output_dir, p_sr=0, p_pr=0, p_ri=p,
-                                 p_rs=0, p_rd=0)
-        generate_noisy_test_data(input_file_path, output_dir, p_sr=0, p_pr=0, p_ri=0,
-                                 p_rs=p, p_rd=0)
-        generate_noisy_test_data(input_file_path, output_dir, p_sr=0, p_pr=0, p_ri=0,
-                                 p_rs=0, p_rd=p)
+    generate_noisy_test_data(input_file_path, output_dir, p_sr=0.1, p_pr=0, p_ri=0,
+                                 p_rs=0.1, p_rd=0)
 
 
 if __name__ == "__main__":
