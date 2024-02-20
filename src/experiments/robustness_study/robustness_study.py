@@ -279,6 +279,13 @@ def main(args):
         with open(os.path.join(args.output_dir, 'results_bert_student.json'), 'w') as f:
             json.dump(results_bert_student, f)
 
+    if args.run_for_augmented_student:
+        logger.info("\nAugmented student model: MC sampling from logit space")
+        augmented_student = load_bert_model(args.augmented_student_model_path)
+        results_bert_augmented_student = perform_experiment_bert_student(augmented_student, test_data, n_trials=args.n_trials)
+        with open(os.path.join(args.output_dir, 'results_bert_augmented_student.json'), 'w') as f:
+            json.dump(results_bert_augmented_student, f)
+
     logger.info("Finished experiment")
 
 
@@ -286,11 +293,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--teacher_model_path', type=str)
     parser.add_argument('--student_model_path', type=str)
+    parser.add_argument('--augmented_student_model_path', type=str)
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--output_dir', type=str)
     parser.add_argument('--n_trials', type=int, default=20)
     parser.add_argument('--run_for_teacher', action='store_true')
     parser.add_argument('--run_for_student', action='store_true')
+    parser.add_argument('--run_for_augmented_student', action='store_true')
     args = parser.parse_args()
 
     log_dir = os.path.join(args.output_dir, 'logs')
