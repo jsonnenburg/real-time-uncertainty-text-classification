@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 import tensorflow as tf
+import tensorflow_probability as tfp
 
 
 def json_serialize(value):
@@ -70,6 +71,16 @@ def brier_score(y_true, y_prob):
     return brier_score_loss(y_true, y_prob)
 
 
+def brier_score_decomposition(y_true, y_pred_logits):
+    """
+    :param y_true:
+    :param y_pred_logits:
+    :return: uncertainty, resolution, reliability
+
+    """
+    return tfp.stats.brier_decomposition(y_true, y_pred_logits)
+
+
 def pred_entropy_score(y_probs):
     p = np.stack([1 - y_probs, y_probs], axis=-1)
     log_p = np.log2(np.clip(p, 1e-9, 1))
@@ -102,6 +113,36 @@ def ece_score(y_true, y_pred, y_prob, n_bins=30):
     ece_l2 = np.sqrt(sum_sq_diff)
 
     return ece_l2
+
+
+def ece_score_l1(y_true, y_pred, y_prob, n_bins=10):
+    """
+    Computes the expected calibration error with a default bin size of 10 and using the L1 norm.
+    """
+    y_true = np.squeeze(y_true)
+
+    bin_limits = np.linspace(0, 1, n_bins + 1)
+    bin_lowers = bin_limits[:-1]
+    bin_uppers = bin_limits[1:]
+
+    sum_abs_diff = 0.0
+
+    for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
+        in_bin = np.greater_equal(y_prob, bin_lower) & np.less(y_prob, bin_upper)
+        in_bin = in_bin.flatten()
+        prop_in_bin = np.mean(in_bin)
+        if prop_in_bin > 0:
+            accuracy_in_bin = np.mean(y_pred[in_bin] == y_true[in_bin])
+            avg_confidence_in_bin = np.mean(y_prob[in_bin])
+            sum_abs_diff += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
+
+    ece_l1 = sum_abs_diff
+
+    return ece_l1
+
+
+def ece_score_l1_tfp(y_true, y_pred_logits, n_bins=10):
+    return tfp.stats.expected_calibration_error(n_bins, logits=y_pred_logits, labels_true=y_true)
 
 
 def bald_score(y_prob_mc):
