@@ -10,7 +10,7 @@ from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
 from src.utils.logger_config import setup_logging
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss
 from src.utils.metrics import bald_score, f1_score, auc_score, json_serialize, accuracy_score, precision_score, \
-    recall_score, nll_score, brier_score, ece_score
+    recall_score, nll_score, brier_score, brier_score_decomposition, ece_score, ece_score_l1_tfp
 from src.utils.robustness_study import RobustnessStudyDataLoader
 
 
@@ -85,6 +85,7 @@ def bert_teacher_mc_dropout(model, eval_data, n=50) -> dict:
 
     y_prob_mcd = tf.nn.sigmoid(total_mean_logits).numpy().reshape(all_labels.shape)
     y_pred_mcd = y_prob_mcd.round(0).astype(int)
+    y_pred_logits_mcd = np.array(total_mean_logits).reshape(all_labels.shape)
     y_true = all_labels
 
     var_mcd = tf.exp(total_mean_log_variances).numpy().reshape(all_labels.shape)
@@ -96,7 +97,9 @@ def bert_teacher_mc_dropout(model, eval_data, n=50) -> dict:
     auc = auc_score(y_true, y_prob_mcd)
     nll = nll_score(y_true, y_prob_mcd)
     bs = brier_score(y_true, y_prob_mcd)
+    unc, res, rel = brier_score_decomposition(y_true, y_pred_logits_mcd)
     ece = ece_score(y_true, y_pred_mcd, y_prob_mcd)
+    ece_l1 = ece_score_l1_tfp(y_true, y_pred_logits_mcd, n_bins=10)
     bald = bald_score(y_prob_samples)
 
     return {
@@ -111,7 +114,11 @@ def bert_teacher_mc_dropout(model, eval_data, n=50) -> dict:
         'auc_score': auc,
         'nll_score': nll,
         'brier_score': bs,
+        'bs_uncertainty': unc,
+        'bs_resolution': res,
+        'bs_reliability': rel,
         'ece_score': ece,
+        'ece_score_l1': ece_l1,
         'bald': bald,
     }
 
@@ -137,6 +144,7 @@ def bert_student_monte_carlo(model, eval_data, n=50):
 
     y_prob_mc = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
     y_pred_mc = y_prob_mc.round(0).astype(int)
+    y_pred_logits_mc = np.array(total_logits).reshape(all_labels.shape)
     var_mc = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
     y_true = all_labels
 
@@ -149,7 +157,9 @@ def bert_student_monte_carlo(model, eval_data, n=50):
     auc = auc_score(y_true, y_prob_mc)
     nll = nll_score(y_true, y_prob_mc)
     bs = brier_score(y_true, y_prob_mc)
+    unc, res, rel = brier_score_decomposition(y_true, y_pred_logits_mc)
     ece = ece_score(y_true, y_pred_mc, y_prob_mc)
+    ece_l1 = ece_score_l1_tfp(y_true, y_pred_logits_mc, n_bins=10)
     bald = bald_score(total_prob_samples_np)
 
     return {
@@ -164,7 +174,11 @@ def bert_student_monte_carlo(model, eval_data, n=50):
         'auc_score': auc,
         'nll_score': nll,
         'brier_score': bs,
+        'bs_uncertainty': unc,
+        'bs_resolution': res,
+        'bs_reliability': rel,
         'ece_score': ece,
+        'ece_score_l1': ece_l1,
         'bald': bald,
     }
 
@@ -207,12 +221,15 @@ def perform_experiment_bert_student(model, preprocessed_data, n_trials):
     return results
 
 
+scalar_metrics = ['accuracy', 'precision', 'recall', 'f1_score', 'auc_score', 'nll_score', 'brier_score',
+                  'bs_uncertainty', 'bs_resolution', 'bs_reliability', 'ece_score', 'ece_score_l1']
+
+
 def init_results_storage(results, typ, level):
     if typ not in results:
         results[typ] = {}
     if level not in results[typ]:
         results[typ][level] = {}
-    scalar_metrics = ['accuracy', 'precision', 'recall', 'f1_score', 'auc_score', 'nll_score', 'brier_score', 'ece_score']
     per_input_metrics = ['y_true', 'y_pred', 'y_prob', 'predictive_variance', 'bald']
     for metric in scalar_metrics + per_input_metrics:
         results[typ][level][metric] = []
@@ -224,7 +241,7 @@ def update_trial_results(results, typ, level, trial_results, trial_index):
     if trial_index == 0:
         # y_true is the same for all trials
         results[typ][level]['y_true'] = trial_results['y_true']
-    for metric in ['accuracy', 'precision', 'recall', 'f1_score', 'auc_score', 'nll_score', 'brier_score', 'ece_score']:
+    for metric in scalar_metrics:
         results[typ][level][metric].append(trial_results[metric])
     for metric in ['y_prob', 'predictive_variance', 'bald']:
         if trial_index == 0:
@@ -235,7 +252,7 @@ def update_trial_results(results, typ, level, trial_results, trial_index):
 
 def finalize_results(results, typ, level):
     # Average scalar metrics
-    for metric in ['accuracy', 'precision', 'recall', 'f1_score', 'auc_score', 'nll_score', 'brier_score', 'ece_score']:
+    for metric in scalar_metrics:
         results[typ][level][metric + '_std'] = json_serialize(np.std(results[typ][level][metric], axis=0))
         results[typ][level][metric] = json_serialize(np.mean(results[typ][level][metric], axis=0))
     # Handle per-input metrics
