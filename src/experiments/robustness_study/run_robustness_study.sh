@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:a10080gb:3
 #SBATCH --mem=64G
 #SBATCH --output=robustness-study_%j.out
-#SBATCH --time=20:00:00
+#SBATCH --time=40:00:00
 
 module load python/3.8
 module load cuda/11.3
