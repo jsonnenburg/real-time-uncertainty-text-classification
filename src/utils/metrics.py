@@ -71,14 +71,30 @@ def brier_score(y_true, y_prob):
     return brier_score_loss(y_true, y_prob)
 
 
-def brier_score_decomposition(y_true, y_pred_logits):
-    """
-    :param y_true:
-    :param y_pred_logits:
-    :return: uncertainty, resolution, reliability
+def adapt_logits_for_binary_classification(logits):
+    """Adapts logits from shape (N, 1) to (N, 2) for binary classification."""
+    # Logits for the negative class could be inferred as zeros or the negation of the positive logits
+    # Here, we use negation to construct complementary logits for the two classes
+    negative_class_logits = -logits  # Assuming logits represent the positive class
+    adapted_logits = tf.concat([negative_class_logits, logits], axis=1)
+    return adapted_logits
 
-    """
-    return tfp.stats.brier_decomposition(y_true, y_pred_logits)
+
+def brier_score_decomposition(y_true, y_pred_logits):
+    y_true_tensor = tf.convert_to_tensor(y_true, dtype=tf.int32)
+    logits_tensor = tf.convert_to_tensor(y_pred_logits, dtype=tf.float32)
+
+    # turn y_pred_logits from (N,) to (N, 1)
+    logits_tensor = tf.reshape(logits_tensor, [-1, 1])
+
+    # Adapt logits from shape (N, 1) to (N, 2)
+    adapted_logits_tensor = adapt_logits_for_binary_classification(logits_tensor)
+
+    # Ensure y_true is a tensor of shape (n_samples,)
+    y_true_tensor = tf.squeeze(y_true_tensor)
+
+    uncertainty, resolution, reliability = tfp.stats.brier_decomposition(y_true_tensor, adapted_logits_tensor)
+    return uncertainty.numpy(), resolution.numpy(), reliability.numpy()
 
 
 def pred_entropy_score(y_probs):
@@ -142,7 +158,21 @@ def ece_score_l1(y_true, y_pred, y_prob, n_bins=10):
 
 
 def ece_score_l1_tfp(y_true, y_pred_logits, n_bins=10):
-    return tfp.stats.expected_calibration_error(n_bins, logits=y_pred_logits, labels_true=y_true)
+    y_true_tensor = tf.convert_to_tensor(y_true, dtype=tf.int32)
+    logits_tensor = tf.convert_to_tensor(y_pred_logits, dtype=tf.float32)
+
+    # turn y_pred_logits from (N,) to (N, 1)
+    logits_tensor = tf.reshape(logits_tensor, [-1, 1])
+
+    # Adapt logits from shape (N, 1) to (N, 2)
+    adapted_logits_tensor = adapt_logits_for_binary_classification(logits_tensor)
+
+    # Ensure y_true is a tensor of shape (n_samples,)
+    y_true_tensor = tf.squeeze(y_true_tensor)
+
+    ece = tfp.stats.expected_calibration_error(n_bins, logits=adapted_logits_tensor, labels_true=y_true_tensor)
+
+    return ece.numpy()
 
 
 def bald_score(y_prob_mc):
