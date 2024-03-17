@@ -15,7 +15,7 @@ from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
 from src.utils.logger_config import setup_logging
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss
 from src.utils.metrics import bald_score, f1_score, auc_score, json_serialize, accuracy_score, precision_score, \
-    recall_score, nll_score, brier_score, ece_score
+    recall_score, nll_score, brier_score, brier_score_decomposition, ece_score, ece_score_l1_tfp
 
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,11 @@ class Results:
     auc: float
     nll: float
     bs: float
+    unc: float
+    res: float
+    rel: float
     ece: float
+    ece_l1: float
     bald: np.ndarray
 
     field_names = None
@@ -123,10 +127,12 @@ def bert_teacher_mc_dropout(model, eval_data, n=50) -> Results:
     auc = auc_score(y_true, y_prob_mcd)
     nll = nll_score(y_true, y_prob_mcd)
     bs = brier_score(y_true, y_prob_mcd)
+    unc, res, rel = brier_score_decomposition(y_true, y_pred_logits_mcd)
     ece = ece_score(y_true, y_pred_mcd, y_prob_mcd)
+    ece_l1 = ece_score_l1_tfp(y_true, y_pred_logits_mcd, n_bins=10)
     bald = bald_score(y_prob_samples)
 
-    return Results(y_true, y_pred_mcd, y_prob_mcd, var_mcd, acc, prec, rec, f1, auc, nll, bs, ece, bald)
+    return Results(y_true, y_pred_mcd, y_prob_mcd, var_mcd, acc, prec, rec, f1, auc, nll, bs, unc, res, rel, ece, ece_l1, bald)
 
 
 def bert_student_monte_carlo(model, eval_data, n=50):
@@ -163,10 +169,12 @@ def bert_student_monte_carlo(model, eval_data, n=50):
     auc = auc_score(y_true, y_prob_mc)
     nll = nll_score(y_true, y_prob_mc)
     bs = brier_score(y_true, y_prob_mc)
+    unc, res, rel = brier_score_decomposition(y_true, y_pred_logits_mc)
     ece = ece_score(y_true, y_pred_mc, y_prob_mc)
+    ece_l1 = ece_score_l1_tfp(y_true, y_pred_logits_mc, n_bins=10)
     bald = bald_score(total_prob_samples_np)
 
-    return Results(y_true, y_pred_mc, y_prob_mc, var_mc, acc, prec, rec, f1, auc, nll, bs, ece, bald)
+    return Results(y_true, y_pred_mc, y_prob_mc, var_mc, acc, prec, rec, f1, auc, nll, bs, unc, res, rel, ece, ece_l1, bald)
 
 
 def perform_experiment_bert_teacher(model, dataset: tf.data.Dataset, n_trials: int):
