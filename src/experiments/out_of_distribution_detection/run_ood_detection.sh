@@ -23,5 +23,5 @@ echo "PYTHONPATH after adding project root: $PYTHONPATH"
 python3.8 src/experiments/out_of_distribution_detection/ood_detection.py --teacher_model_path out/bert_teacher/final_e3_lr2_hd020_ad020_cd030/model \
 --student_model_path out/bert_student/m5_k10/shen_2_lr0.0002_e4/model \
 --augmented_student_model_path out/bert_student_augmented/m5_k10/shen_2_lr0.0002_e2_augmented/model \
---data_dir data/out_of_distribution_detection/preprocessed/hate --output_dir out/out_of_distribution_detection/hate \
+--data_dir data/out_of_distribution_detection/preprocessed/offensive --output_dir out/out_of_distribution_detection/offensive \
 --n_trials 20 --run_for_teacher --run_for_student --run_for_augmented_student

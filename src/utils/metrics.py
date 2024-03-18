@@ -131,32 +131,6 @@ def ece_score(y_true, y_pred, y_prob, n_bins=30):
     return ece_l2
 
 
-def ece_score_l1(y_true, y_pred, y_prob, n_bins=10):
-    """
-    Computes the expected calibration error with a default bin size of 10 and using the L1 norm.
-    """
-    y_true = np.squeeze(y_true)
-
-    bin_limits = np.linspace(0, 1, n_bins + 1)
-    bin_lowers = bin_limits[:-1]
-    bin_uppers = bin_limits[1:]
-
-    sum_abs_diff = 0.0
-
-    for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
-        in_bin = np.greater_equal(y_prob, bin_lower) & np.less(y_prob, bin_upper)
-        in_bin = in_bin.flatten()
-        prop_in_bin = np.mean(in_bin)
-        if prop_in_bin > 0:
-            accuracy_in_bin = np.mean(y_pred[in_bin] == y_true[in_bin])
-            avg_confidence_in_bin = np.mean(y_prob[in_bin])
-            sum_abs_diff += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
-
-    ece_l1 = sum_abs_diff
-
-    return ece_l1
-
-
 def ece_score_l1_tfp(y_true, y_pred_logits, n_bins=10):
     y_true_tensor = tf.convert_to_tensor(y_true, dtype=tf.int32)
     logits_tensor = tf.convert_to_tensor(y_pred_logits, dtype=tf.float32)

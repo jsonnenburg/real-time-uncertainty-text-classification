@@ -11,7 +11,7 @@ import logging
 
 from sklearn.metrics import classification_report
 
-from src.distribution_distillation.uncertainty_distillation import get_predictive_distributions
+from src.experiments.distribution_distillation.uncertainty_distillation import get_predictive_distributions
 from src.utils.logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset, \
     bert_preprocess, get_tf_dataset

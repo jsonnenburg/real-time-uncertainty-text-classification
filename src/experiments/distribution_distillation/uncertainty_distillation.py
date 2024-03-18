@@ -2,20 +2,24 @@ import argparse
 import json
 import os
 
+import numpy as np
 import pandas as pd
+
+import time
 
 import logging
 
 from sklearn.metrics import classification_report
 
-from src.distribution_distillation.uncertainty_distillation import compute_student_metrics, \
-    delete_all_but_latest_checkpoint
 from src.utils.logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset, \
     bert_preprocess, get_tf_dataset
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
+from src.training.train_bert_teacher import json_serialize
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
+from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, auc_score, nll_score,
+                               brier_score, ece_score, bald_score)
 from src.utils.training import HistorySaver
 
 import tensorflow as tf
@@ -23,11 +27,104 @@ import tensorflow as tf
 logger = logging.getLogger()
 
 
+def delete_all_but_latest_checkpoint(model_dir):
+    """
+    Delete all but the latest checkpoint file in the model directory.
+
+    :param model_dir: The directory containing the model checkpoint files.
+    """
+    checkpoint_files = [f for f in os.listdir(model_dir) if f.startswith("cp-") and f.endswith(".ckpt.index")]
+    epoch_numbers = [int(f.split('-')[1].split('.')[0]) for f in checkpoint_files]
+    last_epoch_num = max(epoch_numbers)
+    last_epoch_prefix = f"cp-{last_epoch_num:02d}"
+    for f in os.listdir(model_dir):
+        if f.startswith("cp-") and not f.startswith(last_epoch_prefix):
+            os.remove(os.path.join(model_dir, f))
+
+
+def get_predictions(model, eval_data):
+    total_logits = []
+    total_log_variances = []
+    total_labels = []
+    
+    # mc samples
+    total_prob_samples = []
+
+    # iterate over all batches in eval_data
+    start_time = time.time()
+    for batch in eval_data:
+        features, labels = batch
+        outputs = model.monte_carlo_sample(features, n=50)
+        total_logits.extend(outputs['mean_logits'])  # the first moment of the Gaussian over the logits estimated via MC sampling
+        total_log_variances.extend(outputs['log_variances'])
+        total_labels.extend(labels.numpy())
+        total_prob_samples.extend(outputs['prob_samples'])
+    total_time = time.time() - start_time
+    average_inference_time = total_time / len(total_labels) * 1000
+    logger.info(f"Average inference time per sample: {average_inference_time:.0f} milliseconds.")
+
+    all_labels = np.array(total_labels)
+
+    prob_predictions_np = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
+    class_predictions_np = prob_predictions_np.round(0).astype(int)
+    variances_np = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
+    labels_np = all_labels
+
+    total_prob_samples_np = np.array(total_prob_samples)
+    
+    results = {'y_true': labels_np,
+               'y_pred': class_predictions_np,
+               'y_prob': prob_predictions_np,
+               'predictive_variance': variances_np, 
+               'y_prob_mc': total_prob_samples_np,
+               'average_inference_time': average_inference_time
+               }
+    
+    return results
+    
+
+def compute_student_metrics(model, eval_data):
+    predictions = get_predictions(model, eval_data)
+    
+    y_true = predictions['y_true']
+    y_pred = predictions['y_pred']
+    y_prob = predictions['y_prob']
+    predictive_variance = predictions['predictive_variance']
+    y_prob_mc = predictions['y_prob_mc']
+    average_inference_time = predictions['average_inference_time']
+
+    acc = accuracy_score(y_true, y_pred)
+    prec = precision_score(y_true, y_pred)
+    rec = recall_score(y_true, y_pred)
+    f1 = f1_score(y_true, y_pred)
+    auc = auc_score(y_true, y_prob)
+    nll = nll_score(y_true, y_prob)
+    bs = brier_score(y_true, y_prob)
+    ece = ece_score(y_true, y_pred, y_prob)
+    bald = bald_score(y_prob_mc)
+    return {
+        "y_true": y_true.tolist(),
+        "y_pred": y_pred.tolist(),
+        "y_prob": y_prob.tolist(),
+        "predictive_variance": predictive_variance.tolist(),
+        "average_inference_time": json_serialize(average_inference_time),
+        "accuracy_score": json_serialize(acc),
+        "precision_score": json_serialize(prec),
+        "recall_score": json_serialize(rec),
+        "f1_score": json_serialize(f1),
+        "auc_score": json_serialize(auc),
+        "nll_score": json_serialize(nll),
+        "brier_score": json_serialize(bs),
+        "ece_score": json_serialize(ece),
+        "bald_score": bald.tolist()
+    }
+
+
 def main(args):
     """
     Student knowledge distillation pipeline. Setup similar to the grid search testing pipeline.
     """
-    logger.info("Starting distribution distillation with augmented transfer dataset.")
+    logger.info("Starting distribution distillation.")
 
     with open(os.path.join(args.teacher_model_save_dir, 'config.json'), 'r') as f:
         teacher_config = json.load(f)
@@ -41,16 +138,13 @@ def main(args):
                                                   teacher_config['classifier_dropout'])
 
     # initialize student model
-    student_model = AleatoricMCDropoutBERT(student_model_config, custom_loss_fn=shen_loss(n_samples=args.m * args.k,
-                                                                                          loss_weight=args.shen_loss_weight))
+    student_model = AleatoricMCDropoutBERT(student_model_config, custom_loss_fn=shen_loss(n_samples=args.m*args.k, loss_weight=args.shen_loss_weight))
     # compile with shen loss
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.learning_rate)
     student_model.compile(
         optimizer=optimizer,
-        loss={'classifier': shen_loss(n_samples=args.m * args.k, loss_weight=args.shen_loss_weight),
-              'log_variance': null_loss},
-        metrics=[{'classifier': 'binary_crossentropy'}, tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(),
-                 tf.keras.metrics.Recall()],
+        loss={'classifier': shen_loss(n_samples=args.m*args.k, loss_weight=args.shen_loss_weight), 'log_variance': null_loss},
+        metrics=[{'classifier': 'binary_crossentropy'}, tf.keras.metrics.BinaryAccuracy(), tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
         run_eagerly=True
     )
     logger.info('Student model compiled.')
@@ -77,7 +171,7 @@ def main(args):
         data_dir = os.path.join(args.transfer_data_dir, f'm{args.m}_k{args.k}')
 
     dataset = Dataset()
-    dataset.train = pd.read_csv(os.path.join(data_dir, 'transfer_train_augmented.csv'), sep='\t')
+    dataset.train = pd.read_csv(os.path.join(data_dir, 'transfer_train.csv'), sep='\t')
     dataset.val = pd.read_csv(os.path.join(data_dir, 'transfer_test.csv'), sep='\t')
     dataset.test = pd.read_csv(os.path.join(data_dir, 'test.csv'), sep='\t')  # ADDED ORIGINAL TEST SET HERE
 
@@ -85,8 +179,7 @@ def main(args):
     # prepare data for transfer learning
     tokenized_dataset = {
         'train': transfer_data_bert_preprocess(dataset.train, max_length=args.max_length),
-        'val': transfer_data_bert_preprocess(dataset.val,
-                                             max_length=args.max_length) if dataset.val is not None else None,
+        'val': transfer_data_bert_preprocess(dataset.val, max_length=args.max_length) if dataset.val is not None else None,
         'test': bert_preprocess(dataset.test, max_length=args.max_length)
     }
 
@@ -141,11 +234,10 @@ def main(args):
     results = compute_student_metrics(student_model, test_data)
     with open(os.path.join(result_dir, 'results.json'), 'w') as f:
         json.dump(results, f)
-    logger.info(
-        f"\n==== Classification report ====\n {classification_report(results['y_true'], results['y_pred'], zero_division=0)}")
+    logger.info(f"\n==== Classification report ====\n {classification_report(results['y_true'], results['y_pred'], zero_division=0)}")
 
     f1 = results['f1_score']
-    logger.info(f"Final f1 score of augmented distilled student model: {f1:.3f}")
+    logger.info(f"Final f1 score of distilled student model: {f1:.3f}")
 
     delete_all_but_latest_checkpoint(model_dir)
 
