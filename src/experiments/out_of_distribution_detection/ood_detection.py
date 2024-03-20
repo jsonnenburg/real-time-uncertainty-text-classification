@@ -205,14 +205,13 @@ def perform_experiment_bert_student(model, dataset: tf.data.Dataset, n_trials: i
     for metric in Results.field_names:
         results[metric] = json_serialize(np.mean(results[metric], axis=0))
 
-    logger.info("Finished experiment for teacher model.")
+    logger.info("Finished experiment for student model.")
     return results
 
 
 def main(args):
     logger.info(f"Loading data from {args.data_dir}")
     data = pd.read_csv(os.path.join(args.data_dir, 'train.csv'), sep='\t', index_col=0)
-    logger.info(data[data['text'].isna()])
     data_tf = preprocess_data_bert(data)
 
     logger.info("Performing experiment...")
