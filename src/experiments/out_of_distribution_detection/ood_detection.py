@@ -25,9 +25,8 @@ logger = logging.getLogger(__name__)
 class Results:
 
     y_true: np.ndarray
-    y_pred_mcd: np.ndarray
-    y_prob_mcd: np.ndarray
-    var_mcd: np.ndarray
+    y_prob: np.ndarray
+    var: np.ndarray
     acc: float
     prec: float
     rec: float
@@ -123,10 +122,10 @@ def bert_teacher_mc_dropout(model, eval_data, n=50) -> Results:
     auc = auc_score(y_true, y_prob_mcd)
     nll = nll_score(y_true, y_prob_mcd)
     bs = brier_score(y_true, y_prob_mcd)
-    ece = ece_score_l1_tfp(y_true, y_pred_mcd)
+    ece = ece_score_l1_tfp(y_true, y_pred_logits_mcd)
     bald = bald_score(y_prob_samples)
 
-    return Results(y_true, y_pred_mcd, y_prob_mcd, var_mcd, acc, prec, rec, f1, auc, nll, bs, ece, bald)
+    return Results(y_true, y_prob_mcd, var_mcd, acc, prec, rec, f1, auc, nll, bs, ece, bald)
 
 
 def bert_student_monte_carlo(model, eval_data, n=50):
@@ -163,10 +162,10 @@ def bert_student_monte_carlo(model, eval_data, n=50):
     auc = auc_score(y_true, y_prob_mc)
     nll = nll_score(y_true, y_prob_mc)
     bs = brier_score(y_true, y_prob_mc)
-    ece = ece_score_l1_tfp(y_true, y_pred_mc)
+    ece = ece_score_l1_tfp(y_true, y_pred_logits_mc)
     bald = bald_score(total_prob_samples_np)
 
-    return Results(y_true, y_pred_mc, y_prob_mc, var_mc, acc, prec, rec, f1, auc, nll, bs, ece, bald)
+    return Results(y_true, y_prob_mc, var_mc, acc, prec, rec, f1, auc, nll, bs, ece, bald)
 
 
 def perform_experiment_bert_teacher(model, dataset: tf.data.Dataset, n_trials: int):
@@ -184,6 +183,9 @@ def perform_experiment_bert_teacher(model, dataset: tf.data.Dataset, n_trials: i
 
     for metric in Results.field_names:
         results[metric] = json_serialize(np.mean(results[metric], axis=0))
+
+    # add y_pred
+    results['y_pred'] = json_serialize(np.round(results['y_prob'], 0))
 
     logger.info("Finished experiment for teacher model.")
     return results
@@ -204,6 +206,9 @@ def perform_experiment_bert_student(model, dataset: tf.data.Dataset, n_trials: i
 
     for metric in Results.field_names:
         results[metric] = json_serialize(np.mean(results[metric], axis=0))
+
+    # add y_pred
+    results['y_pred'] = json_serialize(np.round(results['y_prob'], 0))
 
     logger.info("Finished experiment for student model.")
     return results
