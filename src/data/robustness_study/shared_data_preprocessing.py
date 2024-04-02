@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 from enum import Enum
 # import nltk
 # nltk.download('words')
-from nltk.corpus import words
+from nltk.corpus import words, stopwords
 
 from bs4 import BeautifulSoup
 import emoji
@@ -14,8 +14,6 @@ from sklearn.model_selection import train_test_split
 
 SEED = 42
 
-# remove stopwords
-from nltk.corpus import stopwords
 
 stopwords_set = set(stopwords.words("english"))
 other_exclusions = {"#ff", "ff", "rt"}
@@ -31,6 +29,8 @@ class DataLoader:
 
     def load_data(self):
         self.data = pd.read_csv(self.data_dir, sep=',', index_col=0)
+        # set target column to 1 if class is hate speech or offensive language, 0 otherwise
+        # class mapping: 1 - hate speech, 2 - offensive language, 3 - neither
         self.data['target'] = ((self.data['class'] == 0) | (self.data['class'] == 1)).astype(int)
         self.data.drop(['hate_speech', 'offensive_language', 'neither', 'class', 'count'], axis=1, inplace=True)
         self.data.columns = ['text', 'target']

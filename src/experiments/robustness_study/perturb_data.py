@@ -8,16 +8,6 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-ap = argparse.ArgumentParser()
-ap.add_argument("--input_file_path", required=True, type=str, help="Path to raw test data.")
-ap.add_argument("--output_dir", required=True, type=str, help="Where to save modified test data.")
-args = ap.parse_args()
-
-input_file_path = args.input_file_path
-output_dir = args.output_dir
-
-p_values = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
-
 
 def generate_noisy_test_data(input_file, output_dir, p_sr, p_pr, p_ri, p_rs, p_rd):
     logger.info(f"Generating noisy sequences... \n"
@@ -51,20 +41,28 @@ def generate_noisy_test_data(input_file, output_dir, p_sr, p_pr, p_ri, p_rs, p_r
     logger.info(f"Successfully generated noisy sequences for {input_file} and saved them to {output_dir}.")
 
 
-def main():
-    logger.info(f"Generating noisy sequences for {input_file_path}.")
+def main(args):
+    logger.info(f"Generating noisy sequences for {args.input_file_path}.")
+
+    p_values = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
+
     for p in p_values:
-        generate_noisy_test_data(input_file_path, output_dir, p_sr=p, p_pr=0, p_ri=0,
+        generate_noisy_test_data(args.input_file_path, args.output_dir, p_sr=p, p_pr=0, p_ri=0,
                                  p_rs=0, p_rd=0)
-        generate_noisy_test_data(input_file_path, output_dir, p_sr=0, p_pr=p, p_ri=0,
+        generate_noisy_test_data(args.input_file_path, args.output_dir, p_sr=0, p_pr=p, p_ri=0,
                                  p_rs=0, p_rd=0)
-        generate_noisy_test_data(input_file_path, output_dir, p_sr=0, p_pr=0, p_ri=p,
+        generate_noisy_test_data(args.input_file_path, args.output_dir, p_sr=0, p_pr=0, p_ri=p,
                                  p_rs=0, p_rd=0)
-        generate_noisy_test_data(input_file_path, output_dir, p_sr=0, p_pr=0, p_ri=0,
+        generate_noisy_test_data(args.input_file_path, args.output_dir, p_sr=0, p_pr=0, p_ri=0,
                                  p_rs=p, p_rd=0)
-        generate_noisy_test_data(input_file_path, output_dir, p_sr=0, p_pr=0, p_ri=0,
+        generate_noisy_test_data(args.input_file_path, args.output_dir, p_sr=0, p_pr=0, p_ri=0,
                                  p_rs=0, p_rd=p)
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--input_file_path", required=True, type=str, help="Path to raw test data.")
+    ap.add_argument("--output_dir", required=True, type=str, help="Where to save modified test data.")
+    args = ap.parse_args()
+
+    main(args)

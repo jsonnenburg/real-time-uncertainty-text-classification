@@ -321,7 +321,7 @@ def run_bert_grid_search(data: dict,
                                             f"dropout combination: {best_dropout_combination} "
                                             f"with learning rate of {best_lr} and {best_n_epochs} epochs.")
                                 updated_best_combination = True
-                            logger.info(f"Finished current iteration.\n")
+                            logger.info("Finished current iteration.\n")
                         except Exception as e:
                             logger.error(f"Error for current iteration at epochs {epochs}, LR {learning_rate}, "
                                          f"and dropout combination {current_dropout_combination}: {e}.")
