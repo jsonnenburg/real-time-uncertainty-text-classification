@@ -266,31 +266,30 @@ def random_insertion(words, p):
 ########################################################################
 
 def introduce_noise(sequence, word_distribution, p_sr=0, p_pr=0, p_ri=0, p_rs=0, p_rd=0):
-    words = sequence.split(' ')
-    words = [word for word in words if word != '']
+    """
+    Introduce noise to a sequence with the given probabilities for each type of noise.
+    """
+    def split_sequence_into_words(sequence):
+        return [word for word in sequence.split(' ') if word != '']
 
-    augmented_sequence = None
+    augmented_words = split_sequence_into_words(sequence)
 
     if p_sr > 0:
-        a_words = synonym_replacement(words, p_sr)
-        augmented_sequence = ' '.join(a_words)
+        augmented_words = synonym_replacement(augmented_words, p_sr)
 
     if p_pr > 0:
-        augmented_sequence = pos_guided_word_replacement(word_distribution, sequence, p_pr)
+        augmented_sequence = ' '.join(augmented_words)
+        augmented_sequence = pos_guided_word_replacement(word_distribution, augmented_sequence, p_pr)
+        augmented_words = split_sequence_into_words(augmented_sequence)
 
     if p_ri > 0:
-        a_words = random_insertion(words, p_ri)
-        augmented_sequence = ' '.join(a_words)
+        augmented_words = random_insertion(augmented_words, p_ri)
 
     if p_rs > 0:
-        a_words = random_swap(words, p_rs)
-        augmented_sequence = ' '.join(a_words)
+        augmented_words = random_swap(augmented_words, p_rs)
 
     if p_rd > 0:
-        a_words = random_deletion(words, p_rd)
-        augmented_sequence = ' '.join(a_words)
+        augmented_words = random_deletion(augmented_words, p_rd)
 
-    if augmented_sequence is not None:
-        return augmented_sequence
-    else:
-        return sequence
+    augmented_sequence = ' '.join(augmented_words)
+    return augmented_sequence
