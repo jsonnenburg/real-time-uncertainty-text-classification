@@ -229,14 +229,14 @@ def main(args):
 
     if args.run_for_student:
         bert_student = load_bert_model(args.student_model_path)
-        logger.info("\nStudent model: MC sampling from logit space")
+        logger.info("Student model: MC sampling from logit space")
         results_bert_student = perform_experiment_bert_student(bert_student, data_tf, n_trials=args.n_trials)
         with open(os.path.join(args.output_dir, 'results_bert_student.json'), 'w') as f:
             json.dump(results_bert_student, f)
 
     if args.run_for_augmented_student:
         bert_augmented_student = load_bert_model(args.augmented_student_model_path)
-        logger.info("\nAugmented student model: MC sampling from logit space")
+        logger.info("Augmented student model: MC sampling from logit space")
         results_bert_augmented_student = perform_experiment_bert_student(bert_augmented_student, data_tf, n_trials=args.n_trials)
         with open(os.path.join(args.output_dir, 'results_bert_augmented_student.json'), 'w') as f:
             json.dump(results_bert_augmented_student, f)

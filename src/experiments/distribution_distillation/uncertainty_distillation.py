@@ -19,7 +19,7 @@ from src.training.train_bert_teacher import json_serialize
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
 from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, auc_score, nll_score,
-                               brier_score, ece_score, bald_score)
+                               brier_score, ece_score, ece_score_l1_tfp, bald_score)
 from src.utils.training import HistorySaver
 
 import tensorflow as tf
@@ -65,6 +65,7 @@ def get_predictions(model, eval_data):
 
     all_labels = np.array(total_labels)
 
+    y_pred_logits_mc = np.array(total_logits).reshape(all_labels.shape)
     prob_predictions_np = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
     class_predictions_np = prob_predictions_np.round(0).astype(int)
     variances_np = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
@@ -74,6 +75,7 @@ def get_predictions(model, eval_data):
     
     results = {'y_true': labels_np,
                'y_pred': class_predictions_np,
+               'y_pred_logits': y_pred_logits_mc,
                'y_prob': prob_predictions_np,
                'predictive_variance': variances_np, 
                'y_prob_mc': total_prob_samples_np,
@@ -88,6 +90,7 @@ def compute_student_metrics(model, eval_data):
     
     y_true = predictions['y_true']
     y_pred = predictions['y_pred']
+    y_pred_logits = predictions['y_pred_logits']
     y_prob = predictions['y_prob']
     predictive_variance = predictions['predictive_variance']
     y_prob_mc = predictions['y_prob_mc']
@@ -101,6 +104,7 @@ def compute_student_metrics(model, eval_data):
     nll = nll_score(y_true, y_prob)
     bs = brier_score(y_true, y_prob)
     ece = ece_score(y_true, y_pred, y_prob)
+    ece_l1 = ece_score_l1_tfp(y_true, y_pred_logits)
     bald = bald_score(y_prob_mc)
     return {
         "y_true": y_true.tolist(),
@@ -116,6 +120,7 @@ def compute_student_metrics(model, eval_data):
         "nll_score": json_serialize(nll),
         "brier_score": json_serialize(bs),
         "ece_score": json_serialize(ece),
+        "ece_score_l1": json_serialize(ece_l1),
         "bald_score": bald.tolist()
     }
 
