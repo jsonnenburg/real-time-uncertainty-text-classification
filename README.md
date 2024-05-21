@@ -6,7 +6,7 @@
 
 **1st Examiner:** Prof. Dr. Stefan Lessmann
 
-**2nd Examiner:** Prof. Dr. Benjaming Fabian
+**2nd Examiner:** Prof. Dr. Benjamin Fabian
 
 ![results_summary](/analysis/plots/uncertainty_distillation/results_summary_figure.png)
 
@@ -85,14 +85,20 @@ Does a repository contain a table/plot of main results and a script to reproduce
 ## Project structure
 
 ```bash
-├── README.md
-├── requirements.txt                                -- required libraries
-├── data                                            -- stores csv file 
-├── plots                                           -- stores image files
-└── src
-    ├── prepare_source_data.ipynb                   -- preprocesses data
-    ├── data_preparation.ipynb                      -- preparing datasets
-    ├── model_tuning.ipynb                          -- tuning functions
-    └── run_experiment.ipynb                        -- run experiments 
-    └── plots                                       -- plotting functions                 
+├── analysis                                        -- analysis notebooks
+│   └── plots
+├── data                                            -- datasets                          
+├── out                                             -- experiment results
+├── scripts                                         -- helper scripts
+├── src
+│   ├── experiments                                 -- experiment code
+│   │   ├── out_of_distribution_detection           
+│   │   ├── robustness_study
+│   │   └── uncertainty_distillation                              
+│   ├── models                                      -- model implementations
+│   ├── preprocessing                               -- preprocessing scripts
+│   │   ├── out_of_distribution_detection           
+│   │   └── robustness_study                              
+│   └── utils                                       -- metrics, logger config, loss functions, etc.
+└── tests                                           -- unit tests and test scripts               
 ```
