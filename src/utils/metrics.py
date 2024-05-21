@@ -2,6 +2,7 @@ import numpy as np
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 import tensorflow as tf
 import tensorflow_probability as tfp
+from typing import Tuple
 
 
 def json_serialize(value):
@@ -20,14 +21,14 @@ def json_serialize(value):
         return value
 
 
-def safe_divide(numerator, denominator):
+def safe_divide(numerator, denominator) -> float:
     if denominator == 0:
         return 0 if numerator == 0 else np.nan
     else:
         return numerator / denominator
 
 
-def accuracy_score(y_true, y_pred):
+def accuracy_score(y_true, y_pred) -> float:
     """
     :param y_true: The true class labels.
     :param y_pred: The predicted class labels.
@@ -35,25 +36,37 @@ def accuracy_score(y_true, y_pred):
     return np.mean(y_true == y_pred)
 
 
-def precision_score(y_true, y_pred):
+def precision_score(y_true, y_pred) -> float:
+    """
+    :param y_true: The true class labels.
+    :param y_pred: The predicted class labels.
+    """
     true_positives = np.sum((y_true == 1) & (y_pred == 1))
     predicted_positives = np.sum(y_pred == 1)
     return safe_divide(true_positives, predicted_positives)
 
 
-def recall_score(y_true, y_pred):
+def recall_score(y_true, y_pred) -> float:
+    """
+    :param y_true: The true class labels.
+    :param y_pred: The predicted class labels.
+    """
     true_positives = np.sum((y_true == 1) & (y_pred == 1))
     actual_positives = np.sum(y_true == 1)
     return safe_divide(true_positives, actual_positives)
 
 
-def f1_score(y_true, y_pred):
+def f1_score(y_true, y_pred) -> float:
+    """
+    :param y_true: The true class labels.
+    :param y_pred: The predicted class labels.
+    """
     precision = precision_score(y_true, y_pred)
     recall = recall_score(y_true, y_pred)
     return safe_divide(2 * precision * recall, precision + recall)
 
 
-def auc_score(y_true, y_prob):
+def auc_score(y_true, y_prob) -> float:
     """
     :param y_true: The true class labels.
     :param y_prob: The predicted probabilities of the positive class.
@@ -61,18 +74,30 @@ def auc_score(y_true, y_prob):
     return roc_auc_score(y_true, y_prob)
 
 
-def nll_score(y_true, y_prob):
+def nll_score(y_true, y_prob) -> float:
+    """
+    :param y_true: The true class labels.
+    :param y_prob: The predicted probabilities of the positive class.
+    """
     y_true = np.squeeze(y_true)
     return log_loss(y_true, y_prob)
 
 
-def brier_score(y_true, y_prob):
+def brier_score(y_true, y_prob) -> float:
+    """
+    :param y_true: The true class labels.
+    :param y_prob: The predicted probabilities of the positive class.
+    """
     y_true = np.squeeze(y_true)
     return brier_score_loss(y_true, y_prob)
 
 
-def adapt_logits_for_binary_classification(logits):
-    """Adapts logits from shape (N, 1) to (N, 2) for binary classification."""
+def adapt_logits_for_binary_classification(logits) -> tf.Tensor:
+    """
+    Adapts logits from shape (N, 1) to (N, 2) for binary classification.
+
+    :param logits: The logits for the positive class.
+    """
     # Logits for the negative class could be inferred as zeros or the negation of the positive logits
     # Here, we use negation to construct complementary logits for the two classes
     negative_class_logits = -logits  # Assuming logits represent the positive class
@@ -80,7 +105,12 @@ def adapt_logits_for_binary_classification(logits):
     return adapted_logits
 
 
-def brier_score_decomposition(y_true, y_pred_logits):
+def brier_score_decomposition(y_true, y_pred_logits) -> Tuple[float, float, float]:
+    """
+    Computes the Brier score decomposition into uncertainty, resolution, and reliability components.
+    :param y_true: The true class labels.
+    :param y_pred_logits: The predicted logits for the positive class.
+    """
     y_true_tensor = tf.convert_to_tensor(y_true, dtype=tf.int32)
     logits_tensor = tf.convert_to_tensor(y_pred_logits, dtype=tf.float32)
 
@@ -97,7 +127,11 @@ def brier_score_decomposition(y_true, y_pred_logits):
     return uncertainty.numpy(), resolution.numpy(), reliability.numpy()
 
 
-def pred_entropy_score(y_probs):
+def pred_entropy_score(y_probs) -> np.ndarray:
+    """
+    Computes the entropy of the predicted probabilities.
+    :param y_probs: The predicted probabilities of the positive class.
+    """
     p = np.stack([1 - y_probs, y_probs], axis=-1)
     log_p = np.log2(np.clip(p, 1e-9, 1))
     entropy = -np.sum(p * log_p, axis=-1)
@@ -131,7 +165,14 @@ def ece_score(y_true, y_pred, y_prob, n_bins=30):
     return ece_l2
 
 
-def ece_score_l1_tfp(y_true, y_pred_logits, n_bins=10):
+def ece_score_l1_tfp(y_true, y_pred_logits, n_bins=10) -> float:
+    """
+    Computes the Expected Calibration Error (ECE) using the L1 norm.
+
+    :param y_true: The true class labels.
+    :param y_pred_logits: The predicted logits for the positive class.
+    :param n_bins: The number of bins to use for the ECE computation.
+    """
     y_true_tensor = tf.convert_to_tensor(y_true, dtype=tf.int32)
     logits_tensor = tf.convert_to_tensor(y_pred_logits, dtype=tf.float32)
 
@@ -149,7 +190,7 @@ def ece_score_l1_tfp(y_true, y_pred_logits, n_bins=10):
     return ece.numpy()
 
 
-def bald_score(y_prob_mc):
+def bald_score(y_prob_mc) -> np.ndarray:
     """
     Computes the BALD score as defined by Houlsby et al. (2011) for evaluating the predictive uncertainty of a model.
     Defined as the difference between the entropy of the predictive distribution and the expected entropy of the

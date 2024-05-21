@@ -1,3 +1,6 @@
+"""
+Script for adding correctly calculated ECE score to the results json file.
+"""
 import argparse
 import json
 from scipy.special import logit

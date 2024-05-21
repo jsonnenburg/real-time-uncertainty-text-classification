@@ -18,7 +18,7 @@ from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
 from src.data.robustness_study.bert_data_preprocessing import bert_preprocess, get_tf_dataset
 
 from src.utils.metrics import (json_serialize, accuracy_score, precision_score, recall_score, f1_score, auc_score,
-                               nll_score, brier_score, ece_score, bald_score)
+                               nll_score, brier_score, ece_score, bald_score, ece_score_l1_tfp)
 from src.utils.loss_functions import null_loss, bayesian_binary_crossentropy
 from src.utils.data import SimpleDataLoader, Dataset
 from src.utils.training import HistorySaver
@@ -46,6 +46,7 @@ def compute_metrics(model, eval_data):
     all_labels = np.array(total_labels)
 
     y_prob = tf.nn.sigmoid(total_logits).numpy().reshape(all_labels.shape)
+    y_pred_logits = np.array(total_logits).reshape(all_labels.shape)
     y_pred = y_prob.round(0).astype(int)
     var = tf.exp(total_log_variances).numpy().reshape(all_labels.shape)
     y_true = all_labels
@@ -58,6 +59,7 @@ def compute_metrics(model, eval_data):
     nll = nll_score(y_true, y_prob)
     bs = brier_score(y_true, y_prob)
     ece = ece_score(y_true, y_pred, y_prob)
+    ece_l1 = ece_score_l1_tfp(y_true, y_pred_logits)
     return {
         "y_true": y_true.tolist(),
         "y_pred": y_pred.tolist(),
@@ -71,7 +73,8 @@ def compute_metrics(model, eval_data):
         "auc_score": json_serialize(auc),
         "nll_score": json_serialize(nll),
         "brier_score": json_serialize(bs),
-        "ece_score": json_serialize(ece)
+        "ece_score": json_serialize(ece),
+        "ece_score_l1": json_serialize(ece_l1)
     }
 
 
@@ -105,6 +108,7 @@ def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
     
     y_prob_mcd = tf.nn.sigmoid(total_mean_logits).numpy().reshape(all_labels.shape)
     y_pred_mcd = y_prob_mcd.round(0).astype(int)
+    y_pred_logits_mcd = np.array(total_logits).reshape(all_labels.shape)
     y_true = all_labels
 
     var_mcd = tf.exp(total_mean_log_variances).numpy().reshape(all_labels.shape)
@@ -117,6 +121,7 @@ def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
     nll = nll_score(y_true, y_prob_mcd)
     bs = brier_score(y_true, y_prob_mcd)
     ece = ece_score(y_true, y_pred_mcd, y_prob_mcd)
+    ece_l1 = ece_score_l1_tfp(y_true, y_pred_logits_mcd)
     bald = bald_score(y_prob_samples)
     return {
         "y_true": y_true.tolist(),
@@ -132,6 +137,7 @@ def compute_mc_dropout_metrics(model, eval_data, n=50) -> dict:
         "nll_score": json_serialize(nll),
         "brier_score": json_serialize(bs),
         "ece_score": json_serialize(ece),
+        "ece_score_l1": json_serialize(ece_l1),
         "bald_score": bald.tolist()
     }
 

@@ -8,7 +8,7 @@ import logging
 
 from sklearn.metrics import classification_report
 
-from src.experiments.distribution_distillation.uncertainty_distillation import compute_student_metrics, \
+from src.experiments.uncertainty_distillation.uncertainty_distillation import compute_student_metrics, \
     delete_all_but_latest_checkpoint
 from src.utils.logger_config import setup_logging
 from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset, \
