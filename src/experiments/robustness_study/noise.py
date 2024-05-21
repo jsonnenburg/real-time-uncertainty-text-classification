@@ -5,7 +5,7 @@ import nltk
 # nltk.download('wordnet')
 # nltk.download('averaged_perceptron_tagger')
 
-from src.data.robustness_study.shared_data_preprocessing import ENTITY_PLACEHOLDERS
+from src.preprocessing.robustness_study.shared_data_preprocessing import ENTITY_PLACEHOLDERS
 
 from nltk.corpus import stopwords
 

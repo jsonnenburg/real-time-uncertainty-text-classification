@@ -12,7 +12,7 @@ import pandas as pd
 import tensorflow as tf
 from tqdm import tqdm
 
-from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
+from src.preprocessing.robustness_study.bert_data_preprocessing import bert_preprocess
 from src.experiments.uncertainty_distillation.sample_from_teacher import load_data
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
 from src.utils.data import Dataset

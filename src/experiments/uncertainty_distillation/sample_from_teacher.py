@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 import tensorflow as tf
 
-from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
+from src.preprocessing.robustness_study.bert_data_preprocessing import bert_preprocess
 from src.utils.data import Dataset
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
 from src.utils.loss_functions import null_loss, bayesian_binary_crossentropy

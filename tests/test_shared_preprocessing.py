@@ -1,6 +1,6 @@
 import pytest
 
-from src.data.robustness_study.shared_data_preprocessing import *
+from src.preprocessing.robustness_study.shared_data_preprocessing import *
 
 
 def test_remove_multiple_spaces():

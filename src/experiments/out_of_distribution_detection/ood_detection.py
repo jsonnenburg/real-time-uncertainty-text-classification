@@ -10,7 +10,7 @@ import argparse
 import pandas as pd
 import tensorflow as tf
 
-from src.data.robustness_study.bert_data_preprocessing import bert_preprocess
+from src.preprocessing.robustness_study.bert_data_preprocessing import bert_preprocess
 from src.models.bert_model import AleatoricMCDropoutBERT, create_bert_config
 from src.utils.logger_config import setup_logging
 from src.utils.loss_functions import bayesian_binary_crossentropy, null_loss

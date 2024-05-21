@@ -1,6 +1,6 @@
 import os
 
-from src.data.robustness_study.shared_data_preprocessing import remove_stopwords
+from src.preprocessing.robustness_study.shared_data_preprocessing import remove_stopwords
 from src.utils.data import SimpleDataLoader
 from src.utils.processing import parallel_apply
 

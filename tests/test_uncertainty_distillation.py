@@ -13,10 +13,10 @@ from sklearn.metrics import classification_report
 
 from src.experiments.uncertainty_distillation.uncertainty_distillation import get_predictive_distributions
 from src.utils.logger_config import setup_logging
-from src.data.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset, \
+from src.preprocessing.robustness_study.bert_data_preprocessing import transfer_data_bert_preprocess, transfer_get_tf_dataset, \
     bert_preprocess, get_tf_dataset
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
-from src.training.train_bert_teacher import json_serialize
+from src.experiments.uncertainty_distillation.train_bert_teacher import json_serialize
 from src.utils.loss_functions import shen_loss, null_loss
 from src.utils.data import Dataset
 from src.utils.metrics import (accuracy_score, precision_score, recall_score, f1_score, nll_score, brier_score,

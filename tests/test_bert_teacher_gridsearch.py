@@ -12,7 +12,7 @@ import pandas as pd
 from src.utils.logger_config import setup_logging
 
 from src.models.bert_model import create_bert_config
-from src.training.train_bert_teacher import run_bert_grid_search, train_model, setup_config_directories, prepare_data, \
+from src.experiments.uncertainty_distillation.train_bert_teacher import run_bert_grid_search, train_model, setup_config_directories, prepare_data, \
     infer_final_model_config
 from src.utils.data import SimpleDataLoader, Dataset
 

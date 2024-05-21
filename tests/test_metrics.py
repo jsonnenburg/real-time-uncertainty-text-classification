@@ -1,4 +1,4 @@
-from src.training.train_bert_teacher import compute_mc_dropout_metrics, compute_metrics
+from src.experiments.uncertainty_distillation.train_bert_teacher import compute_mc_dropout_metrics, compute_metrics
 import unittest
 import numpy as np
 import tensorflow as tf

@@ -15,7 +15,7 @@ from sklearn.metrics import classification_report
 
 from src.utils.logger_config import setup_logging
 from src.models.bert_model import create_bert_config, AleatoricMCDropoutBERT
-from src.data.robustness_study.bert_data_preprocessing import bert_preprocess, get_tf_dataset
+from src.preprocessing.robustness_study.bert_data_preprocessing import bert_preprocess, get_tf_dataset
 
 from src.utils.metrics import (json_serialize, accuracy_score, precision_score, recall_score, f1_score, auc_score,
                                nll_score, brier_score, ece_score, bald_score, ece_score_l1_tfp)

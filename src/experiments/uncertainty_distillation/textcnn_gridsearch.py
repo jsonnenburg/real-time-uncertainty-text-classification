@@ -13,7 +13,7 @@ from src.utils.training import HistorySaver, TextCNNConfig
 
 logger = logging.getLogger(__name__)
 
-from src.data.robustness_study.baselines_data_preprocessing import pad_sequences, get_embedding_matrix, load_glove_embeddings
+from src.preprocessing.robustness_study.baselines_data_preprocessing import pad_sequences, get_embedding_matrix, load_glove_embeddings
 from src.utils.data import SimpleDataLoader
 from src.utils.logger_config import setup_logging
 

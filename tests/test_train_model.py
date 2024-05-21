@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 
 from src.models.bert_model import CustomTFSequenceClassifierOutput
-from src.training.train_bert_teacher import train_model
+from src.experiments.uncertainty_distillation.train_bert_teacher import train_model
 
 
 class TestTrainModel(unittest.TestCase):
