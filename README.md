@@ -8,7 +8,7 @@
 
 **2nd Examiner:** Prof. Dr. Benjaming Fabian
 
-![[analysis/plots/uncertainty_distillation/results_summary_figure.png]]
+![results_summary](/analysis/plots/uncertainty_distillation/results_summary_figure.png)
 
 ## Table of Content
 
