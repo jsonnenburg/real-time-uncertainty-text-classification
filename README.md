@@ -117,16 +117,16 @@ sbatch src/experiments/out_of_distribution_detection/run_out_of_distribution_det
 ### Evaluation Code
 We need to evaluate the results of each stage in order to be able to proceed, as we first need to determine the best model hyperparameters.
 
-For evaluating the results of the uncertainty distillation, run the following analysis notebooks:
-```analysis/teacher_hyperparameter_analysis.ipynb``` to find the best hyperparameters for the teacher model.
-```analysis/student_hyperparameter_analysis.ipynb``` to find the best hyperparameters for the student model.
-```analysis/student_vs_teacher.ipynb``` to compare the performance of the teacher and student model.
+For evaluating the results of the uncertainty distillation, run the following analysis notebooks:  
+- ```analysis/teacher_hyperparameter_analysis.ipynb``` to find the best hyperparameters for the teacher model.  
+- ```analysis/student_hyperparameter_analysis.ipynb``` to find the best hyperparameters for the student model.  
+- ```analysis/student_vs_teacher.ipynb``` to compare the performance of the teacher and student model.  
 
 For evaluating the results of the robustness study, run the following analysis notebooks:
-```analysis/robustness_study.ipynb``` to analyze the robustness of the teacher and student model.
+- ```analysis/robustness_study.ipynb``` to analyze the robustness of the teacher and student model.
 
 For evaluating the results of the out-of-distribution detection analysis, run the following analysis notebooks:
-```analysis/ood_detection_result_analysis.ipynb``` to analyze the out-of-distribution detection performance.
+- ```analysis/ood_detection_result_analysis.ipynb``` to analyze the out-of-distribution detection performance.
 
 ## Results
 
@@ -141,7 +141,7 @@ All tables and figures presented in the thesis can be found in the analysis note
 ├── out                                             -- experiment results
 ├── scripts                                         -- helper scripts
 ├── src
-│   ├── experiments                                 -- experiment code
+│   ├── experiments                                 -- experiment code, including model training and evaluation
 │   │   ├── out_of_distribution_detection           
 │   │   ├── robustness_study
 │   │   └── uncertainty_distillation                              
