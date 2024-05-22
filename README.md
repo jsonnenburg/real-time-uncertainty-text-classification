@@ -49,13 +49,13 @@ To install the requirements for local development, continue as follows:
 
 1. Clone this repository
 
-2. Create an virtual environment and activate it
+2. Create a virtual environment and activate it
 ```bash
 python -m venv thesis-env
 source thesis-env/bin/activate
 ```
 
-3. Install requirements
+3. Install the requirements
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
@@ -67,19 +67,50 @@ Please note that all models were trained on GPU on a remote server. The training
 
 A note on the data: We include the unprocessed dataset used throughout the thesis, as well as the unprocessed out-of-distribution datasets.
 
-Here are some examples:
-- [Paperswithcode](https://github.com/paperswithcode/releasing-research-code)
-- [ML Reproducibility Checklist](https://ai.facebook.com/blog/how-the-ai-community-can-get-serious-about-reproducibility/)
-- [Simple & clear Example from Paperswithcode](https://github.com/paperswithcode/releasing-research-code/blob/master/templates/README.md) (!)
-- [Example TensorFlow](https://github.com/NVlabs/selfsupervised-denoising)
+Below we provide instructions on how to reproduce the results of the experiments conducted in the thesis. If needed, make sure to adapt all parameters throughout, including inside the scripts.
 
-### Training Code
+### 1. Uncertainty Distillation
 
-Does a repository contain a way to train/fit the model(s) described in the paper?
+1. Execute ```src/preprocessing/robustness_study/initial_preprocessing.ipynb``` to preprocess the data and create the necessary splits for training and evaluation.
+2. Perform a grid search to find the best hyperparameters for the teacher model (on SLURM cluster).
+```bash
+sbatch src/experiments/uncertainty_distillation/run_teacher_gridsearch.sh
+```
+Once the grid search is complete, run ```sbatch src/experiments/uncertainty_distillation/run_teacher_performance.sh``` to evaluate the best teacher model across different numbers of MC dropout samples.
+3. Create the transfer dataset for the student model (locally).
+```bash
+python src/distribution_distillation/sample_from_teacher.py --input_data_dir out/bert_teacher_gridsearch/data --teacher_model_save_dir
+out/bert_teacher_gridsearch/final_hd020_ad030_cd020/model --output_dir data/distribution_distillation --m 5 --k 10
+```
+4. Perform a grid search to find the best hyperparameters for the student model (on SLURM cluster).
+```bash
+sbatch src/experiments/uncertainty_distillation/run_student_gridsearch.sh
+```
+
+### 2. Robustness Study 
+1. Create perturbed versions of the test dataset.
+```bash
+python src/experiments/robustness_study/perturb_data.py --input_dir data/robustness_study/preprocessed/test.csv --output_dir data/robustness_study/preprocessed_noisy
+```
+2. Run the robustness study (on SLURM cluster).
+```bash
+sbatch src/experiments/robustness_study/run_robustness_study.sh
+```
+
+### 3. Out-of-Distribution Detection Analysis
+1. Execute ```src/preprocessing/out_of_distribution_detection/preprocessing.ipynb``` to preprocess the out-of-distribution datasets.
+2. Run the out-of-distribution detection analysis (on SLURM cluster).
+```bash 
+sbatch src/experiments/out_of_distribution_detection/run_out_of_distribution_detection.sh
+```
 
 ### Evaluation Code
+We need to evaluate the results of each stage in order to be able to proceed, as we first need to determine the best model hyperparameters.
 
-Does a repository contain a script to calculate the performance of the trained model(s) or run experiments on models?
+For evaluating the results of the uncertainty distillation experiments, run the following analysis notebooks:
+```analysis/teacher_hyperparameter_analysis.ipynb``` to find the best hyperparameters for the teacher model.
+```analysis/student_hyperparameter_analysis.ipynb``` to find the best hyperparameters for the student model.
+```analysis/student_vs_teacher.ipynb``` to compare the performance of the teacher and student model.
 
 ### Pre-Trained Models
 

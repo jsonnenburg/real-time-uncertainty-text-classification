@@ -9,7 +9,7 @@
 module load python/3.8
 module load cuda/11.3
 
-python3.8 -m venv env
+python3.8 -m venv dl_env
 source dl_env/bin/activate
 pip install --upgrade pip
 
