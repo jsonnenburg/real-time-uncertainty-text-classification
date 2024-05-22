@@ -20,6 +20,6 @@ echo "PYTHONPATH after activating venv: $PYTHONPATH"
 export PYTHONPATH=$PYTHONPATH:"/vol/fob-vol1/nebenf23/sonnenbj/real-time-uncertainty-text-classification/"
 echo "PYTHONPATH after adding project root: $PYTHONPATH"
 
-python3.8 src/distribution_distillation/sample_from_teacher.py --input_data_dir out/bert_teacher/data \
+python3.8 src/uncertainty_distillation/sample_from_teacher.py --input_data_dir out/bert_teacher/data \
 --teacher_model_save_dir out/bert_teacher/final_e3_lr2_hd020_ad020_cd030/model --output_dir data/distribution_distillation \
 --m 5 --k 10 --seed 42

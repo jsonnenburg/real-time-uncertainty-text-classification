@@ -17,9 +17,10 @@
     - [Dependencies](#Dependencies)
     - [Setup](#Setup)
 - [Reproducing Results](#Reproducing-Results)
-    - [Training Code](#Training-Code)
+    - [Uncertainty Distillation](#Uncertainty-Distillation)
+    - [Robustness Study](#Robustness-Study)
+    - [Out-of-Distribution Detection Analysis](#Out-of-Distribution-Detection-Analysis)
     - [Evaluation Code](#Evaluation-Code)
-    - [Pre-Trained Models](#Pre-Trained-Models)
 - [Results](#Results)
 - [Project Structure](-Project-Structure)
 
@@ -43,7 +44,6 @@ Follow the instructions below to install the required dependencies.
 We include two different requirement files which do not differ in their content.
 One is for local development and one for running experiments on a remote server with GPU support.
 This separation enables us to develop the project locally despite additional requirements for running the experiments not being available on the local machine.
-
 
 To install the requirements for local development, continue as follows:
 
@@ -69,7 +69,7 @@ A note on the data: We include the unprocessed dataset used throughout the thesi
 
 Below we provide instructions on how to reproduce the results of the experiments conducted in the thesis. If needed, make sure to adapt all parameters throughout, including inside the scripts.
 
-### 1. Uncertainty Distillation
+### Uncertainty Distillation
 
 1. Execute ```src/preprocessing/robustness_study/initial_preprocessing.ipynb``` to preprocess the data and create the necessary splits for training and evaluation.
 2. Perform a grid search to find the best hyperparameters for the teacher model (on SLURM cluster).
@@ -87,8 +87,8 @@ out/bert_teacher_gridsearch/final_hd020_ad030_cd020/model --output_dir data/dist
 sbatch src/experiments/uncertainty_distillation/run_student_gridsearch.sh
 ```
 
-### 2. Robustness Study 
-1. Create perturbed versions of the test dataset.
+### Robustness Study 
+1. Create perturbed versions of the test dataset (locally).
 ```bash
 python src/experiments/robustness_study/perturb_data.py --input_dir data/robustness_study/preprocessed/test.csv --output_dir data/robustness_study/preprocessed_noisy
 ```
@@ -97,8 +97,18 @@ python src/experiments/robustness_study/perturb_data.py --input_dir data/robustn
 sbatch src/experiments/robustness_study/run_robustness_study.sh
 ```
 
-### 3. Out-of-Distribution Detection Analysis
-1. Execute ```src/preprocessing/out_of_distribution_detection/preprocessing.ipynb``` to preprocess the out-of-distribution datasets.
+#### Excursion: Augmented Student
+1. Create the augmented student dataset (locally).
+```bash
+python src/experiments/uncertainty_distillation/augment_transfer_dataset.py
+```
+2. Perform a grid search to find the best hyperparameters for the augmented student model (on SLURM cluster).
+```bash
+sbatch src/experiments/uncertainty_distillation/run_augmented_student_gridsearch.sh
+```
+
+### Out-of-Distribution Detection Analysis
+1. Execute ```src/preprocessing/out_of_distribution_detection/preprocessing.ipynb``` to preprocess the out-of-distribution datasets (locally).
 2. Run the out-of-distribution detection analysis (on SLURM cluster).
 ```bash 
 sbatch src/experiments/out_of_distribution_detection/run_out_of_distribution_detection.sh
@@ -107,18 +117,20 @@ sbatch src/experiments/out_of_distribution_detection/run_out_of_distribution_det
 ### Evaluation Code
 We need to evaluate the results of each stage in order to be able to proceed, as we first need to determine the best model hyperparameters.
 
-For evaluating the results of the uncertainty distillation experiments, run the following analysis notebooks:
+For evaluating the results of the uncertainty distillation, run the following analysis notebooks:
 ```analysis/teacher_hyperparameter_analysis.ipynb``` to find the best hyperparameters for the teacher model.
 ```analysis/student_hyperparameter_analysis.ipynb``` to find the best hyperparameters for the student model.
 ```analysis/student_vs_teacher.ipynb``` to compare the performance of the teacher and student model.
 
-### Pre-Trained Models
+For evaluating the results of the robustness study, run the following analysis notebooks:
+```analysis/robustness_study.ipynb``` to analyze the robustness of the teacher and student model.
 
-Does a repository provide free access to pretrained model weights?
+For evaluating the results of the out-of-distribution detection analysis, run the following analysis notebooks:
+```analysis/ood_detection_result_analysis.ipynb``` to analyze the out-of-distribution detection performance.
 
 ## Results
 
-Does a repository contain a table/plot of main results and a script to reproduce those results?
+All tables and figures presented in the thesis can be found in the analysis notebooks in the ```analysis``` folder.
 
 ## Project Structure
 

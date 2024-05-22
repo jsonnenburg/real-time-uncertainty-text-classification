@@ -51,8 +51,8 @@ def generate_noisy_test_data(input_file, output_dir, p_sr, p_pr, p_ri, p_rs, p_r
 
 def main():
     logger.info(f"Generating noisy sequences for {input_file_path}.")
-    generate_noisy_test_data(input_file_path, output_dir, p_sr=0.05, p_pr=0, p_ri=0,
-                                 p_rs=0.05, p_rd=0)
+    generate_noisy_test_data(input_file_path, output_dir, p_sr=0, p_pr=0, p_ri=0,
+                                 p_rs=0.1, p_rd=0)
 
 
 if __name__ == "__main__":

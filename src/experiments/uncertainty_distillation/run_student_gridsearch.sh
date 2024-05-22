@@ -28,8 +28,8 @@ for shen_loss_weight in "${shen_loss_weights[@]}"; do
     for learning_rate in "${learning_rates[@]}"; do
         for epochs in "${epochs_list[@]}"; do
             version_identifier="shen_${shen_loss_weight}_lr${learning_rate}_e${epochs}"
-            python3.8 src/distribution_distillation/uncertainty_distillation.py \
-            --transfer_data_dir data/distribution_distillation \
+            python3.8 src/experiments/uncertainty_distillation/uncertainty_distillation.py \
+            --transfer_data_dir data/uncertainty_distillation \
             --teacher_model_save_dir out/bert_teacher/final_e3_lr2_hd020_ad020_cd030/model \
             --version_identifier "$version_identifier" \
             --shen_loss_weight $shen_loss_weight \
